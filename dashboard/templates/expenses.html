@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Expenses{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">Expenses</h1>
+    <div class="page-subtitle">Track deductible business costs (ATO categories)</div>
+  </div>
+  <a class="btn btn-primary" href="/api/expenses/export"><i class="ti ti-download"></i> Export CSV</a>
+</div>
+
+<div class="stat-grid biz-stat-grid">
+  <div class="stat-card"><div class="stat-label">Expenses This FY</div><div class="stat-value" id="sum-total">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">Total Deductions</div><div class="stat-value" id="sum-deduct">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">Vehicle Km Used</div><div class="stat-value" id="sum-km">0</div></div>
+  <div class="stat-card"><div class="stat-label">Home Office Hrs</div><div class="stat-value" id="sum-hours">0</div></div>
+</div>
+
+<div class="card">
+  <div class="card-title"><i class="ti ti-plus"></i> Quick Add</div>
+  <div class="expense-form">
+    <input type="date" id="exp-date" class="biz-input">
+    <select id="exp-cat" class="biz-input">
+      {% for c in categories %}
+      <option value="{{ c.id }}" data-km="{{ 'true' if c.km_based else 'false' }}" data-hours="{{ 'true' if c.hourly_based else 'false' }}" data-gst="{{ 'true' if c.gst_common else 'false' }}">{{ c.label }}</option>
+      {% endfor %}
+    </select>
+    <input type="text" id="exp-desc" class="biz-input" placeholder="Description">
+    <input type="number" step="0.01" id="exp-amount" class="biz-input" placeholder="Amount ($)">
+    <input type="number" step="0.1" id="exp-km" class="biz-input" placeholder="Km" hidden>
+    <input type="number" step="0.1" id="exp-hours" class="biz-input" placeholder="Hours" hidden>
+    <label class="biz-check"><input type="checkbox" id="exp-gst"> GST</label>
+    <button class="btn btn-primary" onclick="addExpense()">Add</button>
+  </div>
+  <div class="expense-hint" id="exp-hint"></div>
+</div>
+
+<div class="biz-cols">
+  <div class="card">
+    <div class="card-title">Expenses</div>
+    <div id="expense-list"><div class="biz-empty">Loading…</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">By Category</div>
+    <div id="cat-breakdown"><div class="biz-empty">No data yet.</div></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+const CATEGORIES = {{ categories | tojson }};
+const CAT_LABEL = Object.fromEntries(CATEGORIES.map(c => [c.id, c.label]));
+
+function onCatChange() {
+  const opt = document.getElementById('exp-cat').selectedOptions[0];
+  const km = opt.dataset.km === 'true';
+  const hours = opt.dataset.hours === 'true';
+  document.getElementById('exp-amount').hidden = km || hours;
+  document.getElementById('exp-km').hidden = !km;
+  document.getElementById('exp-hours').hidden = !hours;
+  document.getElementById('exp-gst').checked = opt.dataset.gst === 'true';
+  const hint = document.getElementById('exp-hint');
+  if (km) hint.textContent = 'Enter kilometres driven. Calculated at $0.88/km (max 5,000 km/year).';
+  else if (hours) hint.textContent = 'Enter admin hours. Calculated at $0.70/hour.';
+  else hint.textContent = '';
+}
+
+async function loadSummary() {
+  const s = await Coach.getJSON('/api/expenses/summary');
+  document.getElementById('sum-total').textContent = Coach.money(s.total_expenses);
+  document.getElementById('sum-deduct').textContent = Coach.money(s.total_deductions);
+  document.getElementById('sum-km').textContent = `${s.vehicle_km_used} km`;
+  document.getElementById('sum-hours').textContent = `${s.home_office_hours} h`;
+  const cb = document.getElementById('cat-breakdown');
+  if (!s.by_category.length) { cb.innerHTML = '<div class="biz-empty">No data yet.</div>'; return; }
+  cb.innerHTML = s.by_category.map(c => `
+    <div class="cat-row">
+      <div class="cat-row-top"><span>${c.label}</span><strong>${Coach.money(c.amount)}</strong></div>
+      <div class="cat-bar"><div class="cat-bar-fill" style="width:${c.pct}%"></div></div>
+      <div class="cat-pct">${c.pct}%</div>
+    </div>`).join('');
+}
+
+function monthKey(d) { return (d || '').slice(0, 7); }
+function monthLabel(k) {
+  if (!k) return '';
+  const [y, m] = k.split('-');
+  return new Date(y, m - 1, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+}
+
+async function loadExpenses() {
+  const data = await Coach.getJSON('/api/expenses');
+  const list = data.expenses || [];
+  const wrap = document.getElementById('expense-list');
+  if (!list.length) { wrap.innerHTML = '<div class="biz-empty">No expenses yet. Add one above.</div>'; return; }
+  const groups = {};
+  list.forEach(e => { const k = monthKey(e.date); (groups[k] = groups[k] || []).push(e); });
+  let html = '';
+  Object.keys(groups).sort().reverse().forEach(k => {
+    const items = groups[k];
+    const subtotal = items.reduce((a, e) => a + Number(e.amount || 0), 0);
+    html += `<div class="exp-month"><span>${monthLabel(k)}</span><strong>${Coach.money(subtotal)}</strong></div>`;
+    html += items.map(e => `
+      <div class="exp-item">
+        <div class="exp-item-main">
+          <span class="biz-badge biz-grey">${e.category_label || CAT_LABEL[e.category] || e.category}</span>
+          <span class="exp-desc">${e.description || ''}</span>
+        </div>
+        <div class="exp-item-right">
+          <span class="exp-date">${e.date}</span>
+          <strong>${Coach.money(e.amount)}</strong>
+          <button class="btn-mini secondary" onclick="delExpense('${e.id}')">×</button>
+        </div>
+      </div>`).join('');
+  });
+  wrap.innerHTML = html;
+}
+
+async function addExpense() {
+  try {
+    const opt = document.getElementById('exp-cat').selectedOptions[0];
+    const body = {
+      date: document.getElementById('exp-date').value,
+      category: document.getElementById('exp-cat').value,
+      description: document.getElementById('exp-desc').value,
+      gst_claimable: document.getElementById('exp-gst').checked,
+    };
+    if (opt.dataset.km === 'true') body.km_trip = document.getElementById('exp-km').value;
+    else if (opt.dataset.hours === 'true') body.hours = document.getElementById('exp-hours').value;
+    else body.amount = document.getElementById('exp-amount').value;
+    await Coach.postJSON('/api/expenses/add', body);
+    Coach.toast('Expense added', 'success');
+    document.getElementById('exp-desc').value = '';
+    document.getElementById('exp-amount').value = '';
+    document.getElementById('exp-km').value = '';
+    document.getElementById('exp-hours').value = '';
+    refresh();
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+async function delExpense(id) {
+  try { await Coach.del(`/api/expenses/${id}`); Coach.toast('Deleted', 'info'); refresh(); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+function refresh() { loadSummary(); loadExpenses(); }
+
+document.getElementById('exp-date').value = new Date().toISOString().slice(0, 10);
+document.getElementById('exp-cat').onchange = onCatChange;
+onCatChange();
+refresh();
+</script>
+{% endblock %}

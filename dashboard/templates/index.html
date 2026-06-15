@@ -1,0 +1,287 @@
+{% extends "base.html" %}
+{% block title %}Lead Monitor{% endblock %}
+{% block body_class %}dashboard-page{% endblock %}
+
+{% block topbar %}
+<div class="topbar-titles">
+  <h1 class="page-title">Lead Monitor</h1>
+  <div class="page-subtitle">Facebook group monitoring</div>
+</div>
+<div class="topbar-actions">
+  <span id="fb-chip" class="conn-chip {{ 'ok' if facebook_connected else 'bad' }}">
+    {% if facebook_connected %}● Facebook Connected{% else %}● Not Connected — Go to Settings{% endif %}
+  </span>
+  <button id="btn-start" class="btn-start btn-ripple" onclick="startBot(event)" {% if bot_running %}hidden{% endif %}><i class="ti ti-player-play"></i> Start Bot</button>
+  <button id="btn-stop" class="btn-stop btn-ripple" onclick="stopBot(event)" {% if not bot_running %}hidden{% endif %}><i class="ti ti-player-stop"></i> Stop Bot</button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="dash-grid">
+
+  <div id="notif-banner" class="notif-banner" hidden>
+    <span id="notif-banner-text" class="notif-banner-text"></span>
+    <div class="notif-banner-right">
+      <button id="notif-banner-action" class="notif-banner-btn" hidden></button>
+      <button class="notif-banner-x" onclick="dismissBanner()" aria-label="Dismiss">×</button>
+    </div>
+  </div>
+
+  <div class="card coach-strip" id="coach-strip">
+    <div class="cs-item cs-weather" id="cs-weather"><i class="ti ti-cloud"></i> <span>Weather loading…</span></div>
+    <div class="cs-sep"></div>
+    <div class="cs-item"><i class="ti ti-calendar-event"></i> <span id="cs-lessons">— lessons today</span></div>
+    <div class="cs-sep"></div>
+    <div class="cs-item"><i class="ti ti-cash"></i> <span id="cs-earnings">$0.00 today</span></div>
+    <div class="cs-sep"></div>
+    <div class="cs-item"><i class="ti ti-clock"></i> <span id="cs-next">No upcoming lessons</span></div>
+    <a class="cs-link" href="{{ url_for('coach_index') }}">Home →</a>
+  </div>
+
+  <div class="stats-grid anim-stats">
+    <div class="stat-card accent-teal">
+      <div class="stat-icon"><i class="ti ti-target"></i></div>
+      <div class="stat-value" id="stat-today" data-count="{{ today_count }}">0</div>
+      <div class="stat-label">Today's Leads</div>
+      <div class="stat-sub" id="stat-today-sub">{{ 'active today' if today_count > 0 else 'none yet today' }}</div>
+    </div>
+    <div class="stat-card accent-blue">
+      <div class="stat-icon"><i class="ti ti-chart-line"></i></div>
+      <div class="stat-value" id="stat-total" data-count="{{ total_leads }}">0</div>
+      <div class="stat-label">Total Leads</div>
+      <div class="stat-sub">all time</div>
+    </div>
+    <div class="stat-card accent-purple">
+      <div class="stat-icon"><i class="ti ti-clock"></i></div>
+      <div class="stat-value stat-value-sm" id="stat-lastscan">{{ last_scan | timeago }}</div>
+      <div class="stat-label">Last Scan</div>
+      <div class="stat-sub" id="stat-lastscan-sub">{{ 'monitoring' if bot_running else 'bot stopped' }}</div>
+    </div>
+    <div class="stat-card accent-orange">
+      <div class="stat-icon"><i class="ti ti-users"></i></div>
+      <div class="stat-value" id="stat-groups" data-count="{{ groups_active }}">0</div>
+      <div class="stat-label">Active Groups</div>
+      <div class="stat-sub">monitoring</div>
+    </div>
+  </div>
+
+  {% set m = settings.modules if settings and settings.modules else {} %}
+  {% if m.invoicing or m.tax_estimator or m.lesson_packages %}
+  <div id="biz-low-banner" class="biz-banner amber" hidden></div>
+  <div class="stats-grid biz-health-grid">
+    {% if m.invoicing %}
+    <a class="stat-card accent-orange biz-health-card" href="{{ url_for('invoices_page') }}?filter=unpaid">
+      <div class="stat-icon"><i class="ti ti-file-invoice"></i></div>
+      <div class="stat-value" id="biz-outstanding">$0.00</div>
+      <div class="stat-label">Outstanding Invoices</div>
+      <div class="stat-sub" id="biz-overdue-sub">—</div>
+    </a>
+    {% endif %}
+    {% if m.tax_estimator %}
+    <a class="stat-card accent-teal biz-health-card" href="{{ url_for('tax_page') }}">
+      <div class="stat-icon"><i class="ti ti-calculator"></i></div>
+      <div class="stat-value" id="biz-setaside">$0.00</div>
+      <div class="stat-label">Tax Set Aside / mo</div>
+      <div class="stat-sub" id="biz-next-payg">—</div>
+    </a>
+    {% endif %}
+    {% if m.lesson_packages %}
+    <a class="stat-card accent-blue biz-health-card" href="{{ url_for('packages_page') }}">
+      <div class="stat-icon"><i class="ti ti-package"></i></div>
+      <div class="stat-value" id="biz-packages">0</div>
+      <div class="stat-label">Active Packages</div>
+      <div class="stat-sub" id="biz-packages-sub">—</div>
+    </a>
+    {% endif %}
+  </div>
+  {% endif %}
+
+  <div class="conn-cards anim-statusbar">
+    <div class="conn-card">
+      <span class="conn-card-icon"><i class="ti ti-brand-facebook"></i></span>
+      <div class="conn-card-body">
+        <span class="conn-name">Facebook Session</span>
+        <span class="conn-card-state">
+          <span id="cb-fb-dot" class="conn-dot {{ 'ok' if facebook_connected else 'bad' }}"></span>
+          <span id="cb-fb" class="conn-state {{ 'ok' if facebook_connected else 'bad' }}">{{ 'Connected' if facebook_connected else 'Not Connected' }}</span>
+        </span>
+      </div>
+    </div>
+    <div class="conn-card">
+      <span class="conn-card-icon"><i class="ti ti-robot"></i></span>
+      <div class="conn-card-body">
+        <span class="conn-name">Bot</span>
+        <span class="conn-card-state">
+          <span id="cb-bot-dot" class="conn-dot {{ 'ok' if bot_running else 'bad' }}"></span>
+          <span id="cb-bot" class="conn-state {{ 'ok' if bot_running else 'bad' }}">{{ 'Running' if bot_running else 'Stopped' }}</span>
+        </span>
+      </div>
+    </div>
+    <div class="conn-card">
+      <span class="conn-card-icon"><i class="ti ti-clock-hour-4"></i></span>
+      <div class="conn-card-body">
+        <span class="conn-name">Next Scan</span>
+        <span class="conn-card-state">
+          <span id="cb-scan" class="conn-state">
+            {%- if next_scan_minutes is none -%}Paused
+            {%- elif next_scan_minutes == 0 -%}due now
+            {%- else -%}in {{ next_scan_minutes }} minute{{ 's' if next_scan_minutes != 1 else '' }}{%- endif -%}
+          </span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-cols">
+    <section class="dash-col-left anim-left">
+      <div class="card activity-panel">
+        <div class="activity-head">
+          <div class="card-title">
+            <span class="feed-title-dot {{ 'running' if bot_running else '' }}"></span> Live Activity
+          </div>
+          <button class="btn-clear-log" onclick="clearLog()">Clear Log</button>
+        </div>
+        {% if logs %}
+        <div id="log-panel" class="log-feed">
+          {% for line in logs %}<span class="log-line {{ line.split('] [')[1].split(']')[0] if '] [' in line else 'INFO' }}">{{ line }}</span>{% endfor %}
+        </div>
+        {% else %}
+        <div class="log-feed empty-feed" id="log-panel">
+          <div class="empty-state">
+            <div class="empty-icon"><i class="ti ti-broadcast"></i></div>
+            <div class="empty-title">No activity yet</div>
+            <div class="empty-desc">Bot is stopped. Click Start to begin monitoring.</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
+    <aside class="dash-col-right anim-right">
+      <div class="quick-actions-stacked">
+        <a class="quick-action" href="{{ url_for('leads_page') }}?status=new">
+          <span class="qa-icon"><i class="ti ti-target"></i></span>
+          <span class="qa-label">View New Leads</span>
+          <span class="qa-badge" id="qa-new-badge" {% if not new_count %}hidden{% endif %}>{{ new_count }} NEW</span>
+          <span class="qa-arrow">→</span>
+        </a>
+        <a class="quick-action" href="{{ url_for('groups_page') }}">
+          <span class="qa-icon"><i class="ti ti-users"></i></span>
+          <span class="qa-label">Add a Group</span>
+          <span class="qa-arrow">→</span>
+        </a>
+        <a class="quick-action" href="{{ url_for('keywords_page') }}">
+          <span class="qa-icon"><i class="ti ti-search"></i></span>
+          <span class="qa-label">Edit Keywords</span>
+          <span class="qa-arrow">→</span>
+        </a>
+      </div>
+
+      <div class="card recent-panel">
+        <div class="activity-head">
+          <div class="card-title">Recent Leads</div>
+          <a href="{{ url_for('leads_page') }}" class="text-muted">View all →</a>
+        </div>
+        {% if recent_leads %}
+        <div class="recent-scroll">
+          {% for lead in recent_leads[:3] %}
+          <div class="recent-item">
+            <div class="recent-item-main">
+              <span class="recent-poster">{{ lead.poster_name }}</span>
+              <span class="badge badge-{{ lead.status }}">{{ lead.status | upper }}</span>
+            </div>
+            <div class="recent-item-meta">
+              <span>{{ lead.group_name }}</span>
+              <span class="recent-dot">·</span>
+              <span>{{ lead.created_at | timeago }}</span>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="recent-scroll empty-feed">
+          <div class="empty-state">
+            <div class="empty-icon"><i class="ti ti-target"></i></div>
+            <div class="empty-title">No leads yet</div>
+            <div class="empty-desc">Start the bot to find your first lead.</div>
+          </div>
+        </div>
+        {% endif %}
+      </div>
+    </aside>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+async function loadCoachStrip() {
+  try {
+    const w = await Coach.getJSON('/api/weather');
+    const el = document.getElementById('cs-weather');
+    if (w && w.condition) {
+      el.innerHTML = `<i class="ti ti-cloud"></i> <span>${w.temp_c}&deg; ${w.condition} · ${(w.playability || {}).rating || ''}</span>`;
+    } else { el.innerHTML = '<i class="ti ti-cloud-off"></i> <span>Weather unavailable</span>'; }
+  } catch (e) {}
+  try {
+    const t = await Coach.getJSON('/api/lessons/today');
+    const active = (t.lessons || []).filter(l => l.status !== 'cancelled');
+    document.getElementById('cs-lessons').textContent =
+      `${active.length} lesson${active.length === 1 ? '' : 's'} today`;
+    const now = new Date();
+    const upcoming = active.filter(l => l.status === 'scheduled').map(l => {
+      const [h, m] = l.start_time.split(':').map(Number);
+      const d = new Date(); d.setHours(h, m, 0, 0);
+      return { l, d };
+    }).filter(x => x.d > now).sort((a, b) => a.d - b.d);
+    document.getElementById('cs-next').textContent = upcoming.length
+      ? `Next: ${Coach.to12h(upcoming[0].l.start_time)} ${upcoming[0].l.student_name}`
+      : 'No upcoming lessons';
+  } catch (e) {}
+  try {
+    const s = await Coach.getJSON('/api/earnings/summary');
+    document.getElementById('cs-earnings').textContent = `${Coach.money(s.today)} today`;
+  } catch (e) {}
+}
+loadCoachStrip();
+
+async function loadBizHealth() {
+  if (document.getElementById('biz-outstanding')) {
+    try {
+      const s = await Coach.getJSON('/api/invoices/summary');
+      document.getElementById('biz-outstanding').textContent = Coach.money(s.total_outstanding);
+      document.getElementById('biz-overdue-sub').textContent =
+        s.overdue_count ? `${s.overdue_count} overdue` : 'all on track';
+    } catch (e) {}
+  }
+  if (document.getElementById('biz-setaside')) {
+    try {
+      const t = await Coach.getJSON('/api/tax/estimate');
+      document.getElementById('biz-setaside').textContent = Coach.money(t.monthly_set_aside);
+      const payg = t.next_payg || {};
+      document.getElementById('biz-next-payg').textContent =
+        payg.due_label ? `Next PAYG: ${payg.due_label}` : '—';
+    } catch (e) {}
+  }
+  if (document.getElementById('biz-packages')) {
+    try {
+      const p = await Coach.getJSON('/api/packages?filter=active');
+      const list = p.packages || [];
+      document.getElementById('biz-packages').textContent = list.length;
+      const alerts = await Coach.getJSON('/api/packages/alerts');
+      const low = (alerts.alerts || []).length;
+      document.getElementById('biz-packages-sub').textContent =
+        low ? `${low} running low` : 'all healthy';
+      const banner = document.getElementById('biz-low-banner');
+      if (banner && low) {
+        banner.hidden = false;
+        banner.innerHTML = `<i class="ti ti-alert-triangle"></i> ${low} package${low === 1 ? '' : 's'} running low on sessions. <a href="/packages">Review →</a>`;
+      }
+    } catch (e) {}
+  }
+}
+loadBizHealth();
+</script>
+{% endblock %}

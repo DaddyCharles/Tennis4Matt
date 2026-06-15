@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Ivan{% endblock %} — Ivan</title>
+  <meta name="theme-color" content="#00a8ff">
+  <link rel="manifest" href="{{ url_for('pwa_manifest') }}">
+  <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <div id="ivan-splash" class="ivan-splash">
+    <div class="ivan-splash-bg"></div>
+    <div class="ivan-splash-content">
+      <div class="ivan-splash-logo">
+        <img src="/static/ivan-logo.png" alt="Ivan" class="ivan-splash-img">
+      </div>
+      <div class="ivan-splash-name">Ivan</div>
+      <div class="ivan-splash-tagline">Your coaching business</div>
+      <div class="ivan-splash-bar">
+        <div class="ivan-splash-progress"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="app-layout">
+    <aside class="sidebar">
+      <a href="{{ url_for('coach_index') }}" class="sidebar-logo-link">
+        <div class="sidebar-logo">
+          <img src="/static/ivan-logo.png" alt="Ivan" class="ivan-logo-img">
+          <span class="ivan-logo-text">Ivan</span>
+        </div>
+      </a>
+      <nav class="sidebar-nav">
+        <div class="nav-section-label">Coaching</div>
+        <a href="{{ url_for('coach_index') }}" class="nav-link nav-coaching {{ 'active' if request.path == '/coach' else '' }}">
+          <span class="nav-icon"><i class="ti ti-home"></i></span><span>Home</span>
+        </a>
+        <a href="{{ url_for('calendar_page') }}" class="nav-link nav-coaching {{ 'active' if request.path.startswith('/calendar') else '' }}">
+          <span class="nav-icon"><i class="ti ti-calendar"></i></span><span>Calendar</span>
+        </a>
+        <a href="{{ url_for('students_page') }}" class="nav-link nav-coaching {{ 'active' if request.path.startswith('/students') else '' }}">
+          <span class="nav-icon"><i class="ti ti-users"></i></span><span>Students</span>
+        </a>
+        <a href="{{ url_for('earnings_page') }}" class="nav-link nav-coaching {{ 'active' if request.path.startswith('/earnings') else '' }}">
+          <span class="nav-icon"><i class="ti ti-chart-bar"></i></span><span>Earnings</span>
+        </a>
+
+        {% set m = settings.modules if settings and settings.modules else {} %}
+        {% if m.invoicing or m.expense_tracker or m.tax_estimator or m.lesson_packages or m.sms %}
+        <div class="nav-divider"></div>
+        <div class="nav-section-label">Business</div>
+        {% if m.invoicing %}
+        <a href="{{ url_for('invoices_page') }}" class="nav-link nav-business {{ 'active' if request.path.startswith('/invoices') else '' }}">
+          <span class="nav-icon"><i class="ti ti-file-invoice"></i></span><span>Invoices</span>
+          {% if invoice_stats and invoice_stats.overdue_count %}<span class="nav-badge">{{ invoice_stats.overdue_count }}</span>{% endif %}
+        </a>
+        {% endif %}
+        {% if m.expense_tracker %}
+        <a href="{{ url_for('expenses_page') }}" class="nav-link nav-business {{ 'active' if request.path.startswith('/expenses') else '' }}">
+          <span class="nav-icon"><i class="ti ti-receipt"></i></span><span>Expenses</span>
+        </a>
+        {% endif %}
+        {% if m.tax_estimator %}
+        <a href="{{ url_for('tax_page') }}" class="nav-link nav-business {{ 'active' if request.path.startswith('/tax') else '' }}">
+          <span class="nav-icon"><i class="ti ti-calculator"></i></span><span>Tax Estimator</span>
+        </a>
+        {% endif %}
+        {% if m.lesson_packages %}
+        <a href="{{ url_for('packages_page') }}" class="nav-link nav-business {{ 'active' if request.path.startswith('/packages') else '' }}">
+          <span class="nav-icon"><i class="ti ti-package"></i></span><span>Packages</span>
+          {% if package_alerts %}<span class="nav-badge">{{ package_alerts }}</span>{% endif %}
+        </a>
+        {% endif %}
+        {% if m.sms %}
+        <a href="{{ url_for('sms_page') }}" class="nav-link nav-business {{ 'active' if request.path.startswith('/sms') else '' }}">
+          <span class="nav-icon"><i class="ti ti-message-2"></i></span><span>SMS</span>
+          {% if sms_stats and sms_stats.unread %}<span class="nav-badge">{{ sms_stats.unread }}</span>{% endif %}
+        </a>
+        {% endif %}
+        {% endif %}
+
+        <div class="nav-divider"></div>
+        <div class="nav-section-label nav-section-label-strong">Lead Monitor</div>
+        <a href="{{ url_for('dashboard_page') }}" class="nav-link nav-leadmon {{ 'active' if request.path == '/dashboard' else '' }}">
+          <span class="nav-icon"><i class="ti ti-layout-dashboard"></i></span><span>Lead Monitor</span>
+        </a>
+        <a href="{{ url_for('leads_page') }}" class="nav-link nav-leadmon {{ 'active' if request.path.startswith('/leads') else '' }}">
+          <span class="nav-icon"><i class="ti ti-target"></i></span><span>Leads</span>
+          <span id="nav-leads-badge" class="nav-badge" {% if not nav_new_count %}hidden{% endif %}>{{ nav_new_count }}</span>
+        </a>
+        <a href="{{ url_for('keywords_page') }}" class="nav-link nav-leadmon {{ 'active' if request.path.startswith('/keywords') else '' }}">
+          <span class="nav-icon"><i class="ti ti-search"></i></span><span>Keywords</span>
+          <span id="nav-keywords-dot" class="nav-dot {{ 'ok' if nav_keywords_count else 'bad' }}"></span>
+        </a>
+        <a href="{{ url_for('groups_page') }}" class="nav-link nav-leadmon {{ 'active' if request.path.startswith('/groups') else '' }}">
+          <span class="nav-icon"><i class="ti ti-users"></i></span><span>Groups</span>
+          <span id="nav-groups-dot" class="nav-dot {{ 'ok' if nav_groups_count else 'bad' }}"></span>
+        </a>
+        <a href="{{ url_for('replies_page') }}" class="nav-link nav-leadmon {{ 'active' if request.path.startswith('/replies') else '' }}">
+          <span class="nav-icon"><i class="ti ti-message"></i></span><span>Replies</span>
+        </a>
+
+        <div class="nav-divider"></div>
+        <a href="{{ url_for('settings_page') }}" class="nav-link {{ 'active' if request.path.startswith('/settings') else '' }}">
+          <span class="nav-icon"><i class="ti ti-settings"></i></span><span>Settings</span>
+        </a>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="sidebar-divider"></div>
+        <div id="sidebar-status" class="sidebar-status-pill stopped">
+          <span class="sidebar-status-dot"></span>
+          <span id="sidebar-status-text">STOPPED</span>
+        </div>
+        <div class="sidebar-version">v1.0.0</div>
+      </div>
+    </aside>
+
+    <div class="main-content">
+      <header class="topbar">
+        {% block topbar %}
+        <div class="topbar-titles">
+          <h2>Ivan</h2>
+        </div>
+        <span id="status-badge" class="status-badge stopped">STOPPED</span>
+        {% endblock %}
+      </header>
+      <main class="content">
+        {% block content %}{% endblock %}
+      </main>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      const splash = document.getElementById('ivan-splash');
+      if (!splash) return;
+      if (sessionStorage.getItem('ivan_loaded')) {
+        splash.classList.add('hidden');
+        return;
+      }
+      setTimeout(function () {
+        splash.classList.add('hidden');
+        sessionStorage.setItem('ivan_loaded', '1');
+      }, 1600);
+    })();
+  </script>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', function () {
+        navigator.serviceWorker.register('/sw.js').catch(function () {});
+      });
+    }
+  </script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

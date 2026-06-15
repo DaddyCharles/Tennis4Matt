@@ -1,0 +1,123 @@
+{% extends "base.html" %}
+{% block title %}Leads{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Leads</h1>
+  <a href="{{ url_for('leads_export') }}" class="btn btn-secondary">Export CSV</a>
+</div>
+
+<div class="card">
+  <div class="filter-bar">
+    <div class="form-group">
+      <label class="form-label">Status</label>
+      <select id="filter-status" class="form-select" onchange="filterLeads()">
+        <option value="">All</option>
+        <option value="new">New</option>
+        <option value="replied">Replied</option>
+        <option value="ignored">Ignored</option>
+        <option value="won">Won</option>
+        <option value="lost">Lost</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Group</label>
+      <select id="filter-group" class="form-select" onchange="filterLeads()">
+        <option value="">All</option>
+        {% for group in groups %}
+        <option value="{{ group.name }}">{{ group.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">From</label>
+      <input type="date" id="filter-from" class="form-input" onchange="filterLeads()">
+    </div>
+    <div class="form-group">
+      <label class="form-label">To</label>
+      <input type="date" id="filter-to" class="form-input" onchange="filterLeads()">
+    </div>
+    <div class="form-group" style="flex:1;min-width:200px;">
+      <label class="form-label">Search</label>
+      <input type="text" id="filter-search" class="form-input" placeholder="Search posts..." oninput="filterLeads()">
+    </div>
+  </div>
+
+  {% if leads %}
+  <div class="table-container">
+    <table class="table" id="leads-table">
+      <thead>
+        <tr>
+          <th>Time</th><th>Poster</th><th>Post Preview</th><th>Group</th>
+          <th>Category</th><th>Keyword</th><th>Status</th><th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for lead in leads %}
+        <tr data-status="{{ lead.status }}" data-group="{{ lead.group_name }}" data-date="{{ lead.created_at[:10] }}">
+          <td>{{ lead.created_at | timeago }}</td>
+          <td>{{ lead.poster_name }}</td>
+          <td class="post-preview">{{ lead.post_text[:120] }}{% if lead.post_text|length > 120 %}…{% endif %}</td>
+          <td>{{ lead.group_name }}</td>
+          <td>{{ lead.category_label }}</td>
+          <td>{{ lead.matched_keyword }}</td>
+          <td><span class="badge badge-{{ lead.status }}">{{ lead.status | upper }}</span></td>
+          <td>
+            <div class="btn-group">
+              <button class="btn btn-small btn-primary" onclick="openReplyModal('{{ lead.id }}', '{{ lead.post_url }}')">Reply</button>
+              <button class="btn btn-small btn-secondary" data-name="{{ lead.poster_name }}" onclick="addAsStudent(this)">Add as Student</button>
+              <button class="btn btn-small btn-secondary" onclick="setLeadStatus('{{ lead.id }}','won')">Won</button>
+              <button class="btn btn-small btn-secondary" onclick="setLeadStatus('{{ lead.id }}','lost')">Lost</button>
+              <button class="btn btn-small btn-secondary" onclick="setLeadStatus('{{ lead.id }}','ignored')">Ignore</button>
+              <button class="btn btn-small btn-danger" onclick="deleteLead('{{ lead.id }}')">Delete</button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="pagination">
+    <button id="page-prev" class="btn btn-small btn-secondary" onclick="paginateLeads(currentPage - 1)">Prev</button>
+    <span id="page-info" class="text-muted"></span>
+    <button id="page-next" class="btn btn-small btn-secondary" onclick="paginateLeads(currentPage + 1)">Next</button>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon"><i class="ti ti-target"></i></div>
+    <div class="empty-title">No leads yet</div>
+    <div class="empty-desc">Start the bot and it will find matching posts automatically.</div>
+    <button class="btn-primary" onclick="startBot()">Start Monitoring</button>
+  </div>
+  {% endif %}
+</div>
+
+<div id="reply-modal" class="modal-overlay">
+  <div class="modal">
+    <h3>Suggested Reply</h3>
+    <p class="text-muted">The Facebook post opened in a new tab. Copy this reply, paste it there, and send manually. Then mark the lead as replied.</p>
+    <div class="form-group">
+      <textarea id="reply-text" class="form-input" rows="5"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="copyReplyText()">Copy</button>
+      <button class="btn btn-secondary" onclick="closeModal('reply-modal')">Close</button>
+      <button class="btn btn-primary" onclick="markReplied()">Mark Replied</button>
+    </div>
+  </div>
+</div>
+
+{% include "_coach_modals.html" %}
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+function addAsStudent(btn) {
+  Coach.openAddStudent(btn.getAttribute('data-name') || '');
+}
+window.onStudentsChanged = function () { Coach.toast('Student added', 'success'); };
+</script>
+{% endblock %}

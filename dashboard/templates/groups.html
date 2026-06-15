@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Groups{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Groups</h1>
+</div>
+
+<div class="card">
+  <div class="card-title">Monitored Groups</div>
+  {% if groups %}
+  <div class="table-container">
+    <table class="table">
+      <thead>
+        <tr><th>Name</th><th>URL</th><th>Location</th><th>Status</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for group in groups %}
+        <tr>
+          <td>{{ group.name }}</td>
+          <td><a href="{{ group.url }}" target="_blank">{{ group.url }}</a></td>
+          <td>{{ group.location }}</td>
+          <td>
+            <span class="badge {{ 'badge-running' if group.active else 'badge-ignored' }}">
+              {{ 'ACTIVE' if group.active else 'INACTIVE' }}
+            </span>
+          </td>
+          <td>
+            <div class="btn-group">
+              <button class="btn btn-small btn-secondary" onclick="toggleGroup('{{ group.id }}')">
+                {{ 'Deactivate' if group.active else 'Activate' }}
+              </button>
+              <button class="btn btn-small btn-danger" onclick="deleteGroup('{{ group.id }}')">Delete</button>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-icon"><i class="ti ti-users"></i></div>
+    <div class="empty-title">No groups added</div>
+    <div class="empty-desc">Add your first Facebook group below to start monitoring.</div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="card">
+  <div class="card-title">Add Group</div>
+  <p class="note">Location is used to label leads — only add local groups (e.g. Sydney) to keep results relevant.</p>
+  <div class="form-row">
+    <div class="form-group">
+      <label class="form-label">Name</label>
+      <input type="text" id="group-name" class="form-input" placeholder="Sydney Tennis Community">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Facebook Group URL</label>
+      <input type="text" id="group-url" class="form-input" placeholder="https://www.facebook.com/groups/...">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Location</label>
+      <input type="text" id="group-location" class="form-input" placeholder="Sydney">
+    </div>
+  </div>
+  <button class="btn btn-primary" onclick="addGroup()">Add Group</button>
+</div>
+
+{% endblock %}

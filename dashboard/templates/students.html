@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Students{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">Students</h1>
+    <div class="page-subtitle">Your coaching roster</div>
+  </div>
+  <button class="btn btn-primary" onclick="Coach.openAddStudent()"><i class="ti ti-user-plus"></i> Add Student</button>
+</div>
+
+<div class="card filter-bar">
+  <div class="filter-search">
+    <i class="ti ti-search"></i>
+    <input type="text" id="student-search" class="form-input" placeholder="Search students…" oninput="renderStudents()">
+  </div>
+  <select id="filter-level" class="form-input" onchange="renderStudents()">
+    <option value="">All levels</option>
+    <option>Beginner</option>
+    <option>Intermediate</option>
+    <option>Advanced</option>
+    <option>Elite Junior</option>
+    <option>Junior</option>
+  </select>
+  <select id="filter-active" class="form-input" onchange="renderStudents()">
+    <option value="active">Active only</option>
+    <option value="all">All</option>
+    <option value="inactive">Inactive only</option>
+  </select>
+</div>
+
+<div id="student-grid" class="student-grid">
+  <div class="empty-state"><div class="empty-title">Loading…</div></div>
+</div>
+
+{% include "_coach_modals.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+let _allStudents = [];
+
+function levelBadge(level) {
+  if (!level) return '';
+  const cls = level.toLowerCase().replace(/\s+/g, '-');
+  return `<span class="badge level-${cls}">${level}</span>`;
+}
+
+async function loadStudents() {
+  const data = await Coach.getJSON('/api/students');
+  _allStudents = data.students || [];
+  renderStudents();
+}
+
+function renderStudents() {
+  const grid = document.getElementById('student-grid');
+  const q = document.getElementById('student-search').value.toLowerCase().trim();
+  const level = document.getElementById('filter-level').value;
+  const active = document.getElementById('filter-active').value;
+  let list = _allStudents.filter(s => {
+    if (q && !(s.name || '').toLowerCase().includes(q)) return false;
+    if (level && s.level !== level) return false;
+    if (active === 'active' && s.active === false) return false;
+    if (active === 'inactive' && s.active !== false) return false;
+    return true;
+  });
+  if (!list.length) {
+    grid.innerHTML = `<div class="empty-state">
+      <div class="empty-icon"><i class="ti ti-users"></i></div>
+      <div class="empty-title">No students found</div>
+      <div class="empty-desc">Add your first student to get started.</div></div>`;
+    return;
+  }
+  grid.innerHTML = list.map(s => `
+    <a class="student-card${s.active === false ? ' inactive' : ''}" href="/students/${s.id}">
+      <div class="student-avatar">${Coach.initials(s.name)}</div>
+      <div class="student-info">
+        <div class="student-name">${s.name} ${levelBadge(s.level)}</div>
+        <div class="student-sub">${s.age_group || 'Adult'} · ${s.default_duration || 60} min · ${Coach.money(s.default_price)}</div>
+        <div class="student-meta">
+          ${s.phone ? `<span><i class="ti ti-phone"></i> ${s.phone}</span>` : ''}
+          <span><i class="ti ti-ball-tennis"></i> ${s.lesson_count || 0} lesson${s.lesson_count === 1 ? '' : 's'}</span>
+        </div>
+      </div>
+      <i class="ti ti-chevron-right student-chevron"></i>
+    </a>`).join('');
+}
+
+window.onStudentsChanged = loadStudents;
+loadStudents();
+</script>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Earnings{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">Earnings</h1>
+    <div class="page-subtitle">Track your coaching income</div>
+  </div>
+  <a class="btn btn-secondary" href="/api/earnings/export"><i class="ti ti-download"></i> Export CSV</a>
+</div>
+
+<div class="stat-grid">
+  <div class="stat-card"><div class="stat-label">Today</div><div class="stat-value" id="e-today">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">This week</div><div class="stat-value" id="e-week">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">This month</div><div class="stat-value" id="e-month">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">This year</div><div class="stat-value" id="e-year">$0.00</div></div>
+  <div class="stat-card warn"><div class="stat-label">Unpaid</div><div class="stat-value" id="e-unpaid">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">Projected month</div><div class="stat-value" id="e-projected">$0.00</div></div>
+</div>
+
+<div class="card ai-card" id="insight-card">
+  <div class="activity-head">
+    <div class="card-title"><i class="ti ti-sparkles"></i> AI Insights</div>
+    <button class="btn-mini" onclick="genInsight()" id="insight-btn">Generate</button>
+  </div>
+  <div id="insight-body" class="ai-body text-muted">Generate AI insights about your earnings trends.</div>
+</div>
+
+<div class="chart-grid">
+  <div class="card chart-card">
+    <div class="card-title">Weekly earnings (8 weeks)</div>
+    <div class="chart-container"><canvas id="chart-weekly"></canvas></div>
+  </div>
+  <div class="card chart-card">
+    <div class="card-title">Monthly earnings (12 months)</div>
+    <div class="chart-container"><canvas id="chart-monthly"></canvas></div>
+  </div>
+  <div class="card chart-card chart-wide">
+    <div class="card-title">Daily earnings (this month)</div>
+    <div class="chart-container"><canvas id="chart-daily"></canvas></div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script src="{{ url_for('static', filename='earnings.js') }}"></script>
+<script>
+async function loadSummary() {
+  const s = await Coach.getJSON('/api/earnings/summary');
+  document.getElementById('e-today').textContent = Coach.money(s.today);
+  document.getElementById('e-week').textContent = Coach.money(s.week);
+  document.getElementById('e-month').textContent = Coach.money(s.month);
+  document.getElementById('e-year').textContent = Coach.money(s.year);
+  document.getElementById('e-unpaid').textContent = Coach.money(s.unpaid);
+  document.getElementById('e-projected').textContent = Coach.money(s.projected);
+}
+
+async function genInsight() {
+  const btn = document.getElementById('insight-btn');
+  const box = document.getElementById('insight-body');
+  btn.disabled = true; box.textContent = 'Thinking…';
+  try {
+    const res = await Coach.postJSON('/api/ai/earnings-insight', {});
+    const i = res.insight || {};
+    if (i.recommendation || i.trend) {
+      box.classList.remove('text-muted');
+      box.innerHTML = `
+        ${i.trend ? `<p><strong>Trend:</strong> ${i.trend}</p>` : ''}
+        ${i.busiest_day ? `<p><strong>Busiest day:</strong> ${i.busiest_day}</p>` : ''}
+        ${i.top_student ? `<p><strong>Top student:</strong> ${i.top_student}</p>` : ''}
+        ${i.recommendation ? `<p><strong>Recommendation:</strong> ${i.recommendation}</p>` : ''}`;
+    } else { box.textContent = 'AI not configured. Add an Anthropic API key in Settings.'; }
+  } catch (e) { box.textContent = e.message; }
+  btn.disabled = false;
+}
+
+loadSummary();
+window.addEventListener('load', () => Earnings.renderCharts());
+</script>
+{% endblock %}

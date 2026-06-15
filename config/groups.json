@@ -1,0 +1,11 @@
+{
+  "groups": [
+    {
+      "id": "grp1",
+      "name": "Sydney Tennis Community",
+      "url": "https://www.facebook.com/groups/example1",
+      "location": "Sydney",
+      "active": true
+    }
+  ]
+}

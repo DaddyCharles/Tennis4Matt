@@ -1,0 +1,235 @@
+{% extends "base.html" %}
+{% block title %}{{ student.name }}{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <a href="/students" class="back-link"><i class="ti ti-arrow-left"></i> Students</a>
+    <h1 class="page-title">{{ student.name }}</h1>
+  </div>
+  <div class="btn-group">
+    <button class="btn btn-secondary" onclick="openEdit()"><i class="ti ti-edit"></i> Edit</button>
+    <button class="btn btn-primary" onclick="bookForStudent()"><i class="ti ti-plus"></i> Book Lesson</button>
+  </div>
+</div>
+
+<div class="coach-cols">
+  <section class="coach-col-main">
+    <div class="card">
+      <div class="card-title"><i class="ti ti-history"></i> Lesson History</div>
+      <div id="student-lessons" class="lesson-list">
+        <div class="empty-state"><div class="empty-title">Loading…</div></div>
+      </div>
+    </div>
+  </section>
+
+  <aside class="coach-col-side">
+    <div class="card">
+      <div class="card-title">Details</div>
+      <div class="detail-row"><span>Level</span><strong id="d-level">{{ student.level }}</strong></div>
+      <div class="detail-row"><span>Age group</span><strong>{{ student.age_group }}</strong></div>
+      <div class="detail-row"><span>Phone</span><strong>{{ student.phone or '—' }}</strong></div>
+      <div class="detail-row"><span>Email</span><strong>{{ student.email or '—' }}</strong></div>
+      <div class="detail-row"><span>Default</span><strong>{{ student.default_duration }} min · ${{ '%.2f'|format(student.default_price) }}</strong></div>
+      <div class="detail-row"><span>Lessons</span><strong id="d-count">—</strong></div>
+      <div class="detail-row"><span>Status</span><strong id="d-active">{{ 'Active' if student.active != false else 'Inactive' }}</strong></div>
+      {% if student.notes %}<p class="note">{{ student.notes }}</p>{% endif %}
+      <button class="btn btn-secondary btn-block" onclick="toggleActive()" id="active-btn">{{ 'Deactivate' if student.active != false else 'Reactivate' }}</button>
+    </div>
+
+    {% set m = settings.modules if settings and settings.modules else {} %}
+    {% if m.lesson_packages %}
+    <div class="card">
+      <div class="card-title"><i class="ti ti-package"></i> Packages</div>
+      <div id="student-packages"><div class="biz-empty">Loading…</div></div>
+    </div>
+    {% endif %}
+
+    {% if m.invoicing %}
+    <div class="card">
+      <div class="card-title"><i class="ti ti-file-invoice"></i> Invoices</div>
+      <div id="student-invoices"><div class="biz-empty">Loading…</div></div>
+    </div>
+    {% endif %}
+
+    <div class="card ai-card">
+      <div class="card-title"><i class="ti ti-sparkles"></i> AI Progress Summary</div>
+      <div id="ai-summary" class="ai-body text-muted">Generate an AI summary of this student's progress.</div>
+      <button class="btn btn-secondary btn-block" onclick="genSummary()" id="ai-btn"><i class="ti ti-wand"></i> Generate</button>
+    </div>
+  </aside>
+</div>
+
+<div id="student-edit-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Edit Student</h2>
+      <button class="modal-x" onclick="Coach.closeModal('student-edit-modal')" aria-label="Close">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Name</label>
+      <input type="text" id="e-name" class="form-input">
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Phone</label><input type="text" id="e-phone" class="form-input"></div>
+      <div class="form-group"><label class="form-label">Email</label><input type="email" id="e-email" class="form-input"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Level</label>
+        <select id="e-level" class="form-input">
+          <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
+          <option>Elite Junior</option><option>Junior</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Age group</label>
+        <select id="e-age" class="form-input"><option>Adult</option><option>Junior</option><option>Senior</option></select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label class="form-label">Default duration (min)</label><input type="number" id="e-duration" class="form-input" step="30" min="30"></div>
+      <div class="form-group"><label class="form-label">Default price ($)</label><input type="number" id="e-price" class="form-input" step="5" min="0"></div>
+    </div>
+    <div class="form-group"><label class="form-label">Notes</label><textarea id="e-notes" class="form-input" rows="2"></textarea></div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="saveEdit()">Save</button>
+      <button class="btn btn-secondary" onclick="Coach.closeModal('student-edit-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+{% include "_coach_modals.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+const STUDENT_ID = "{{ student.id }}";
+const STUDENT = {{ student|tojson }};
+
+function statusBadge(s) { return `<span class="status-badge status-${s}">${s}</span>`; }
+
+async function loadLessons() {
+  const data = await Coach.getJSON(`/api/students/${STUDENT_ID}/lessons`);
+  const lessons = data.lessons || [];
+  document.getElementById('d-count').textContent = lessons.length;
+  const list = document.getElementById('student-lessons');
+  if (!lessons.length) {
+    list.innerHTML = `<div class="empty-state"><div class="empty-title">No lessons yet</div></div>`;
+    return;
+  }
+  list.innerHTML = lessons.map(l => {
+    const paid = l.payment_status === 'paid';
+    return `<div class="lesson-card">
+      <div class="lesson-time"><div class="lt-range">${l.date}</div><div class="lt-end">${Coach.to12h(l.start_time)}</div></div>
+      <div class="lesson-body">
+        <div class="lesson-student">${Coach.money(l.price)} · ${l.duration_minutes} min ${statusBadge(l.status)}</div>
+        <div class="lesson-meta">${l.lesson_summary || l.notes || 'No notes'}</div>
+      </div>
+      <div class="lesson-actions">
+        ${paid ? '<span class="badge level-beginner">Paid</span>'
+               : `<button class="btn-mini" onclick="markPaid('${l.id}')">Mark paid</button>`}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function markPaid(id) {
+  try { await Coach.postJSON(`/api/lessons/${id}/pay`); Coach.toast('Marked paid', 'success'); loadLessons(); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+function bookForStudent() { Coach.openAddLesson({ student_id: STUDENT_ID }); }
+window.onLessonsChanged = loadLessons;
+
+function openEdit() {
+  document.getElementById('e-name').value = STUDENT.name || '';
+  document.getElementById('e-phone').value = STUDENT.phone || '';
+  document.getElementById('e-email').value = STUDENT.email || '';
+  document.getElementById('e-level').value = STUDENT.level || 'Beginner';
+  document.getElementById('e-age').value = STUDENT.age_group || 'Adult';
+  document.getElementById('e-duration').value = STUDENT.default_duration || 60;
+  document.getElementById('e-price').value = STUDENT.default_price || 80;
+  document.getElementById('e-notes').value = STUDENT.notes || '';
+  document.getElementById('student-edit-modal').classList.add('open');
+}
+
+async function saveEdit() {
+  try {
+    const body = {
+      name: document.getElementById('e-name').value.trim(),
+      phone: document.getElementById('e-phone').value,
+      email: document.getElementById('e-email').value,
+      level: document.getElementById('e-level').value,
+      age_group: document.getElementById('e-age').value,
+      default_duration: Number(document.getElementById('e-duration').value || 60),
+      default_price: Number(document.getElementById('e-price').value || 80),
+      notes: document.getElementById('e-notes').value,
+    };
+    await Coach.postJSON(`/api/students/${STUDENT_ID}/edit`, body);
+    Coach.toast('Saved', 'success');
+    setTimeout(() => location.reload(), 600);
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+async function toggleActive() {
+  try {
+    const res = await Coach.postJSON(`/api/students/${STUDENT_ID}/deactivate`);
+    document.getElementById('d-active').textContent = res.active ? 'Active' : 'Inactive';
+    document.getElementById('active-btn').textContent = res.active ? 'Deactivate' : 'Reactivate';
+    Coach.toast(res.active ? 'Reactivated' : 'Deactivated', 'info');
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+async function genSummary() {
+  const btn = document.getElementById('ai-btn');
+  const box = document.getElementById('ai-summary');
+  btn.disabled = true; box.textContent = 'Thinking…';
+  try {
+    const res = await Coach.postJSON('/api/ai/student-summary', { student_id: STUDENT_ID });
+    if (res.summary) { box.classList.remove('text-muted'); box.textContent = res.summary; }
+    else { box.textContent = 'AI not configured. Add an Anthropic API key in Settings.'; }
+  } catch (e) { box.textContent = e.message; }
+  btn.disabled = false;
+}
+
+async function loadPackages() {
+  const box = document.getElementById('student-packages');
+  if (!box) return;
+  try {
+    const data = await Coach.getJSON(`/api/packages/student/${STUDENT_ID}`);
+    const list = data.packages || [];
+    if (!list.length) { box.innerHTML = '<div class="biz-empty">No packages.</div>'; return; }
+    box.innerHTML = list.map(p => {
+      const pct = p.total_sessions ? Math.round(p.sessions_remaining / p.total_sessions * 100) : 0;
+      return `<div class="student-pkg">
+        <div class="detail-row"><span>${p.package_name}</span>
+          <strong class="biz-badge ${p.active ? 'biz-green' : 'biz-grey'}">${p.active ? 'ACTIVE' : 'DONE'}</strong></div>
+        <div class="pkg-bar"><div class="pkg-bar-fill ${p.active && p.sessions_remaining <= 2 ? 'low' : ''}" style="width:${pct}%"></div></div>
+        <div class="pkg-remaining">${p.sessions_remaining} of ${p.total_sessions} remaining</div>
+      </div>`;
+    }).join('');
+  } catch (e) { box.innerHTML = `<div class="biz-empty">${e.message}</div>`; }
+}
+
+async function loadInvoices() {
+  const box = document.getElementById('student-invoices');
+  if (!box) return;
+  try {
+    const data = await Coach.getJSON(`/api/invoices/student/${STUDENT_ID}`);
+    const list = data.invoices || [];
+    if (!list.length) { box.innerHTML = '<div class="biz-empty">No invoices.</div>'; return; }
+    box.innerHTML = list.map(i => `
+      <div class="detail-row">
+        <span><a class="mono" href="/api/invoices/${i.id}/pdf" target="_blank">${i.invoice_number}</a></span>
+        <strong>${Coach.money(i.amount_total)} <span class="biz-badge biz-${({draft:'grey',sent:'blue',unpaid:'amber',paid:'green',overdue:'red'})[i.display_status || i.status] || 'grey'}">${(i.display_status || i.status).toUpperCase()}</span></strong>
+      </div>`).join('');
+  } catch (e) { box.innerHTML = `<div class="biz-empty">${e.message}</div>`; }
+}
+
+loadLessons();
+loadPackages();
+loadInvoices();
+</script>
+{% endblock %}

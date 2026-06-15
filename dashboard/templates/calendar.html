@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+{% block title %}Calendar{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">Calendar</h1>
+    <div class="page-subtitle" id="cal-range">This week</div>
+  </div>
+  <div class="cal-controls">
+    <button class="btn btn-secondary btn-icon" onclick="Calendar.prev()" aria-label="Previous week"><i class="ti ti-chevron-left"></i></button>
+    <button class="btn btn-secondary" onclick="Calendar.thisWeek()">Today</button>
+    <button class="btn btn-secondary btn-icon" onclick="Calendar.next()" aria-label="Next week"><i class="ti ti-chevron-right"></i></button>
+    <button class="btn btn-primary" onclick="Coach.openAddLesson()"><i class="ti ti-plus"></i> Add Lesson</button>
+  </div>
+</div>
+
+<div class="card cal-card">
+  <div id="calendar-grid" class="calendar-grid">
+    <div class="empty-state"><div class="empty-title">Loading…</div></div>
+  </div>
+</div>
+
+{% include "_coach_modals.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script src="{{ url_for('static', filename='calendar.js') }}"></script>
+<script>
+  window.onLessonsChanged = () => Calendar.refresh();
+  Calendar.init();
+</script>
+{% endblock %}

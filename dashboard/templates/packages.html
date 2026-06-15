@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Packages{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">Lesson Packages</h1>
+    <div class="page-subtitle">Sell multi-lesson packs and track sessions</div>
+  </div>
+  <button class="btn btn-primary" onclick="openPackageModal()"><i class="ti ti-plus"></i> New Package</button>
+</div>
+
+<div id="pkg-alerts"></div>
+
+<div class="card">
+  <div class="filter-tabs" id="pkg-tabs">
+    <button class="filter-tab active" data-filter="active">Active</button>
+    <button class="filter-tab" data-filter="completed">Completed</button>
+    <button class="filter-tab" data-filter="all">All</button>
+  </div>
+  <div id="pkg-grid" class="pkg-grid"><div class="biz-empty">Loading…</div></div>
+</div>
+
+<div class="modal-overlay" id="package-modal">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>New Package</h2>
+      <button class="modal-x" onclick="Coach.closeModal('package-modal')">×</button>
+    </div>
+    <label class="biz-field"><span>Student</span>
+      <select id="pkg-student" class="biz-input"></select></label>
+    <label class="biz-field"><span>Package Type</span>
+      <select id="pkg-type" class="biz-input" onchange="onTypeChange()">
+        {% for t in package_types %}
+        <option value="{{ t.sessions }}" data-discount="{{ t.discount_pct }}">{{ t.label }} ({{ t.discount_pct }}% off)</option>
+        {% endfor %}
+        <option value="custom" data-discount="0">Custom</option>
+      </select></label>
+    <div class="biz-row">
+      <label class="biz-field"><span>Sessions</span>
+        <input type="number" id="pkg-sessions" class="biz-input" value="10"></label>
+      <label class="biz-field"><span>Price / session</span>
+        <input type="number" step="0.01" id="pkg-price" class="biz-input"></label>
+    </div>
+    <div class="biz-row">
+      <label class="biz-field"><span>Total Price</span>
+        <input type="number" step="0.01" id="pkg-total" class="biz-input"></label>
+      <label class="biz-field"><span>Amount Paid</span>
+        <input type="number" step="0.01" id="pkg-paid" class="biz-input"></label>
+    </div>
+    <label class="biz-field"><span>Expiry (optional)</span>
+      <input type="date" id="pkg-expiry" class="biz-input"></label>
+    <label class="biz-field"><span>Notes</span>
+      <input type="text" id="pkg-notes" class="biz-input" placeholder="e.g. Paid upfront"></label>
+    <button class="btn btn-primary btn-block" onclick="createPackage()">Create Package</button>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+let currentFilter = 'active';
+const DEFAULT_PRICE = {{ settings.default_lesson_price or 80 }};
+
+function pkgCard(p) {
+  const pct = p.total_sessions ? Math.round(p.sessions_remaining / p.total_sessions * 100) : 0;
+  const low = p.active && p.sessions_remaining <= 2;
+  return `<div class="pkg-card ${p.active ? '' : 'done'}">
+    <div class="pkg-card-head">
+      <a class="pkg-student" href="/students/${p.student_id}">${p.student_name}</a>
+      <span class="biz-badge ${p.active ? 'biz-green' : 'biz-grey'}">${p.active ? 'ACTIVE' : 'COMPLETED'}</span>
+    </div>
+    <div class="pkg-name">${p.package_name}</div>
+    <div class="pkg-bar"><div class="pkg-bar-fill ${low ? 'low' : ''}" style="width:${pct}%"></div></div>
+    <div class="pkg-remaining">${p.sessions_remaining} of ${p.total_sessions} remaining</div>
+    <div class="pkg-meta">${Coach.money(p.price_per_session)}/session · Paid: ${Coach.money(p.amount_paid)}</div>
+    <div class="pkg-meta">Purchased: ${p.purchase_date}</div>
+    <div class="pkg-actions">
+      ${p.active && p.sessions_remaining > 0 ? `<button class="btn-mini" onclick="useSession('${p.id}')">Use Session</button>` : ''}
+      <button class="btn-mini secondary" onclick="delPackage('${p.id}')">Delete</button>
+    </div>
+  </div>`;
+}
+
+async function loadPackages() {
+  const data = await Coach.getJSON('/api/packages?filter=' + currentFilter);
+  const grid = document.getElementById('pkg-grid');
+  const list = data.packages || [];
+  grid.innerHTML = list.length ? list.map(pkgCard).join('')
+    : '<div class="biz-empty">No packages here. Click "New Package" to create one.</div>';
+}
+
+async function loadAlerts() {
+  const data = await Coach.getJSON('/api/packages/alerts');
+  const wrap = document.getElementById('pkg-alerts');
+  const alerts = data.alerts || [];
+  if (!alerts.length) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = alerts.map(p =>
+    `<div class="biz-banner amber"><i class="ti ti-alert-triangle"></i> ${p.student_name} — ${p.sessions_remaining} session${p.sessions_remaining === 1 ? '' : 's'} remaining in ${p.package_name}</div>`
+  ).join('');
+}
+
+async function openPackageModal() {
+  await Coach.ensureStudents();
+  const students = await Coach.getJSON('/api/students');
+  const sel = document.getElementById('pkg-student');
+  sel.innerHTML = (students.students || []).map(s => `<option value="${s.id}">${s.name}</option>`).join('');
+  onTypeChange();
+  document.getElementById('package-modal').classList.add('open');
+}
+
+function onTypeChange() {
+  const opt = document.getElementById('pkg-type').selectedOptions[0];
+  const sessionsEl = document.getElementById('pkg-sessions');
+  if (opt.value !== 'custom') sessionsEl.value = opt.value;
+  const discount = Number(opt.dataset.discount || 0);
+  const price = Math.round(DEFAULT_PRICE * (1 - discount / 100) * 100) / 100;
+  document.getElementById('pkg-price').value = price;
+  recalcTotal();
+}
+
+function recalcTotal() {
+  const sessions = Number(document.getElementById('pkg-sessions').value || 0);
+  const price = Number(document.getElementById('pkg-price').value || 0);
+  const total = Math.round(sessions * price * 100) / 100;
+  document.getElementById('pkg-total').value = total;
+  document.getElementById('pkg-paid').value = total;
+}
+document.getElementById('pkg-sessions').addEventListener('input', recalcTotal);
+document.getElementById('pkg-price').addEventListener('input', recalcTotal);
+
+async function createPackage() {
+  try {
+    const opt = document.getElementById('pkg-type').selectedOptions[0];
+    const sessions = Number(document.getElementById('pkg-sessions').value || 0);
+    const body = {
+      student_id: document.getElementById('pkg-student').value,
+      package_name: opt.value === 'custom' ? `${sessions}-Lesson Pack` : opt.text.split(' (')[0],
+      total_sessions: sessions,
+      price_per_session: Number(document.getElementById('pkg-price').value || 0),
+      total_price: Number(document.getElementById('pkg-total').value || 0),
+      amount_paid: Number(document.getElementById('pkg-paid').value || 0),
+      expiry_date: document.getElementById('pkg-expiry').value || null,
+      notes: document.getElementById('pkg-notes').value,
+    };
+    await Coach.postJSON('/api/packages/create', body);
+    Coach.toast('Package created', 'success');
+    Coach.closeModal('package-modal');
+    refresh();
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+async function useSession(id) {
+  try { await Coach.postJSON(`/api/packages/${id}/use-session`); Coach.toast('Session used', 'success'); refresh(); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function delPackage(id) {
+  if (!confirm('Delete this package?')) return;
+  try { await Coach.del(`/api/packages/${id}`); Coach.toast('Deleted', 'info'); refresh(); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+function refresh() { loadPackages(); loadAlerts(); }
+
+document.querySelectorAll('#pkg-tabs .filter-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('#pkg-tabs .filter-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentFilter = tab.dataset.filter;
+    loadPackages();
+  };
+});
+refresh();
+</script>
+{% endblock %}

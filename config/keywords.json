@@ -1,0 +1,202 @@
+{
+  "presets": [
+    {
+      "id": "tennis_coaching_sydney",
+      "label": "🎾 Tennis Coaching — Sydney",
+      "description": "People looking for a tennis coach or lessons in Sydney",
+      "categories": [
+        {
+          "id": "coaching",
+          "label": "Coaching Wanted",
+          "keywords": [
+            "tennis coach",
+            "tennis coaching",
+            "tennis lessons",
+            "tennis instructor",
+            "coach wanted",
+            "looking for coach",
+            "tennis tutor",
+            "private tennis",
+            "tennis training"
+          ],
+          "reply_template_id": "coaching"
+        },
+        {
+          "id": "hitting",
+          "label": "Hitting Partner",
+          "keywords": [
+            "hitting partner",
+            "tennis hitting",
+            "hit some tennis",
+            "tennis hit",
+            "hitting session",
+            "rally partner",
+            "hit around",
+            "tennis game",
+            "social tennis"
+          ],
+          "reply_template_id": "hitting"
+        },
+        {
+          "id": "juniors",
+          "label": "Junior / Kids Tennis",
+          "keywords": [
+            "junior tennis",
+            "kids tennis",
+            "children tennis",
+            "tennis for kids",
+            "youth tennis",
+            "tennis lessons kids",
+            "tennis for my son",
+            "tennis for my daughter"
+          ],
+          "reply_template_id": "coaching"
+        },
+        {
+          "id": "beginner",
+          "label": "Beginners",
+          "keywords": [
+            "learn tennis",
+            "beginner tennis",
+            "start tennis",
+            "never played tennis",
+            "new to tennis",
+            "tennis basics"
+          ],
+          "reply_template_id": "coaching"
+        }
+      ],
+      "exclusions": [
+        "table tennis",
+        "ping pong",
+        "beach tennis",
+        "tennis ball machine for sale",
+        "tennis racket for sale",
+        "tennis shoes for sale"
+      ]
+    },
+    {
+      "id": "tennis_coaching_melbourne",
+      "label": "🎾 Tennis Coaching — Melbourne",
+      "description": "People looking for a tennis coach or lessons in Melbourne",
+      "categories": [
+        {
+          "id": "coaching",
+          "label": "Coaching Wanted",
+          "keywords": [
+            "tennis coach",
+            "tennis coaching",
+            "tennis lessons",
+            "tennis instructor",
+            "coach wanted",
+            "looking for coach",
+            "tennis tutor",
+            "private tennis"
+          ],
+          "reply_template_id": "coaching"
+        },
+        {
+          "id": "hitting",
+          "label": "Hitting Partner",
+          "keywords": [
+            "hitting partner",
+            "tennis hitting",
+            "hit some tennis",
+            "rally partner",
+            "social tennis"
+          ],
+          "reply_template_id": "hitting"
+        }
+      ],
+      "exclusions": [
+        "table tennis",
+        "ping pong",
+        "beach tennis",
+        "tennis equipment for sale"
+      ]
+    },
+    {
+      "id": "hitting_partner_general",
+      "label": "🤝 Hitting Partner — Any City",
+      "description": "People looking for someone to hit with",
+      "categories": [
+        {
+          "id": "hitting",
+          "label": "Hitting Partner",
+          "keywords": [
+            "hitting partner",
+            "tennis hitting",
+            "hit some tennis",
+            "tennis hit",
+            "hitting session",
+            "rally partner",
+            "hit around",
+            "hit with someone",
+            "tennis game",
+            "social tennis",
+            "anyone want to hit"
+          ],
+          "reply_template_id": "hitting"
+        }
+      ],
+      "exclusions": [
+        "table tennis",
+        "ping pong"
+      ]
+    }
+  ],
+  "categories": [
+    {
+      "id": "coaching",
+      "label": "Coaching Wanted",
+      "keywords": [
+        "tennis coach",
+        "tennis coaching",
+        "tennis lessons",
+        "tennis instructor",
+        "coach wanted",
+        "looking for coach",
+        "tennis tutor",
+        "private tennis",
+        "tennis training"
+      ],
+      "reply_template_id": "coaching"
+    },
+    {
+      "id": "hitting",
+      "label": "Hitting Partner",
+      "keywords": [
+        "hitting partner",
+        "tennis hitting",
+        "hit some tennis",
+        "tennis hit",
+        "hitting session",
+        "rally partner",
+        "social tennis"
+      ],
+      "reply_template_id": "hitting"
+    },
+    {
+      "id": "juniors",
+      "label": "Junior / Kids Tennis",
+      "keywords": [
+        "junior tennis",
+        "kids tennis",
+        "children tennis",
+        "tennis for kids",
+        "youth tennis",
+        "tennis lessons kids",
+        "tennis for my son",
+        "tennis for my daughter"
+      ],
+      "reply_template_id": "coaching"
+    }
+  ],
+  "exclusions": [
+    "table tennis",
+    "ping pong",
+    "beach tennis",
+    "tennis ball machine for sale"
+  ],
+  "active_preset": null
+}

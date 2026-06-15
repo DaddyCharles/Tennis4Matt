@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% block title %}Invoices{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">Invoices</h1>
+    <div class="page-subtitle">Generate and track lesson invoices</div>
+  </div>
+</div>
+
+<div class="stat-grid biz-stat-grid">
+  <div class="stat-card"><div class="stat-label">Total Invoiced</div><div class="stat-value" id="sum-invoiced">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">Total Paid</div><div class="stat-value" id="sum-paid">$0.00</div></div>
+  <div class="stat-card warn"><div class="stat-label">Outstanding</div><div class="stat-value" id="sum-outstanding">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">Overdue</div><div class="stat-value" id="sum-overdue">0</div></div>
+</div>
+
+<div class="card">
+  <div class="filter-tabs" id="inv-tabs">
+    <button class="filter-tab active" data-filter="all">All</button>
+    <button class="filter-tab" data-filter="unpaid">Unpaid</button>
+    <button class="filter-tab" data-filter="sent">Sent</button>
+    <button class="filter-tab" data-filter="paid">Paid</button>
+    <button class="filter-tab" data-filter="overdue">Overdue</button>
+  </div>
+  <div class="biz-table-wrap">
+    <table class="biz-table" id="inv-table">
+      <thead>
+        <tr><th>Invoice #</th><th>Student</th><th>Lesson Date</th><th>Amount</th><th>Status</th><th class="ta-right">Actions</th></tr>
+      </thead>
+      <tbody id="inv-body">
+        <tr><td colspan="6" class="biz-empty">Loading…</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+let currentFilter = 'all';
+
+function statusBadge(s) {
+  const map = { draft: 'grey', sent: 'blue', unpaid: 'amber', paid: 'green', overdue: 'red' };
+  return `<span class="biz-badge biz-${map[s] || 'grey'}">${s.toUpperCase()}</span>`;
+}
+function fmtDate(d) {
+  if (!d) return '—';
+  const dt = new Date(d + 'T00:00:00');
+  return dt.toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' });
+}
+
+async function loadSummary() {
+  const s = await Coach.getJSON('/api/invoices/summary');
+  document.getElementById('sum-invoiced').textContent = Coach.money(s.total_invoiced);
+  document.getElementById('sum-paid').textContent = Coach.money(s.total_paid);
+  document.getElementById('sum-outstanding').textContent = Coach.money(s.total_outstanding);
+  document.getElementById('sum-overdue').textContent = s.overdue_count;
+}
+
+async function loadInvoices() {
+  const data = await Coach.getJSON('/api/invoices?filter=' + currentFilter);
+  const body = document.getElementById('inv-body');
+  const list = data.invoices || [];
+  if (!list.length) {
+    body.innerHTML = '<tr><td colspan="6" class="biz-empty">No invoices yet. Complete a lesson and generate an invoice from the Today page.</td></tr>';
+    return;
+  }
+  body.innerHTML = list.map(i => `
+    <tr>
+      <td class="mono">${i.invoice_number}</td>
+      <td>${i.student_name}</td>
+      <td>${fmtDate(i.lesson_date)}</td>
+      <td>${Coach.money(i.amount_total)}</td>
+      <td>${statusBadge(i.display_status || i.status)}</td>
+      <td class="ta-right">
+        <a class="btn-mini" href="/api/invoices/${i.id}/pdf">PDF</a>
+        ${i.status !== 'paid' ? `<button class="btn-mini" onclick="markPaid('${i.id}')">Mark Paid</button>` : ''}
+        <button class="btn-mini secondary" onclick="delInvoice('${i.id}')">Delete</button>
+      </td>
+    </tr>`).join('');
+}
+
+async function markPaid(id) {
+  try { await Coach.postJSON(`/api/invoices/${id}/mark-paid`); Coach.toast('Marked paid', 'success'); refresh(); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function delInvoice(id) {
+  if (!confirm('Delete this invoice?')) return;
+  try { await Coach.del(`/api/invoices/${id}`); Coach.toast('Deleted', 'info'); refresh(); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+function refresh() { loadSummary(); loadInvoices(); }
+
+document.querySelectorAll('#inv-tabs .filter-tab').forEach(tab => {
+  tab.onclick = () => {
+    document.querySelectorAll('#inv-tabs .filter-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    currentFilter = tab.dataset.filter;
+    loadInvoices();
+  };
+});
+
+// Honour ?filter= from links (e.g. dashboard "Outstanding" card)
+const urlFilter = new URLSearchParams(location.search).get('filter');
+if (urlFilter) {
+  const tab = document.querySelector(`#inv-tabs .filter-tab[data-filter="${urlFilter}"]`);
+  if (tab) tab.click();
+}
+refresh();
+</script>
+{% endblock %}

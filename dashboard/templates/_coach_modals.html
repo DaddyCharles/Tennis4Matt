@@ -1,0 +1,111 @@
+<div id="lesson-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Add Lesson</h2>
+      <button class="modal-x" onclick="Coach.closeModal('lesson-modal')" aria-label="Close">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Student</label>
+      <select id="lesson-student" class="form-input"></select>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Date</label>
+        <input type="date" id="lesson-date" class="form-input">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Start time</label>
+        <input type="time" id="lesson-time" class="form-input" step="1800" value="09:00">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Duration</label>
+      <div id="block-selector" class="block-selector"></div>
+      <div id="block-total" class="block-total">1 hour</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Price ($)</label>
+      <input type="number" id="lesson-price" class="form-input" min="0" step="5" value="80">
+    </div>
+    <div class="form-group checkbox-row">
+      <input type="checkbox" id="lesson-recurring" onchange="Coach.toggleRecurring()">
+      <label class="form-label" for="lesson-recurring" style="margin:0;">Repeat weekly</label>
+    </div>
+    <div id="recurring-options" style="display:none;">
+      <div class="form-group">
+        <label class="form-label">Repeat until (optional)</label>
+        <input type="date" id="recurring-end" class="form-input">
+      </div>
+      <p class="note">This creates a lesson every week at the same time.</p>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="lesson-notes" class="form-input" rows="2"></textarea>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="Coach.saveLesson()">Save Lesson</button>
+      <button class="btn btn-secondary" onclick="Coach.closeModal('lesson-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div id="student-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Add Student</h2>
+      <button class="modal-x" onclick="Coach.closeModal('student-modal')" aria-label="Close">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Name</label>
+      <input type="text" id="student-name" class="form-input">
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Phone</label>
+        <input type="text" id="student-phone" class="form-input">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <input type="email" id="student-email" class="form-input">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Level</label>
+        <select id="student-level" class="form-input">
+          <option>Beginner</option>
+          <option>Intermediate</option>
+          <option>Advanced</option>
+          <option>Elite Junior</option>
+          <option>Junior</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Age group</label>
+        <select id="student-age" class="form-input">
+          <option>Adult</option>
+          <option>Junior</option>
+          <option>Senior</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label class="form-label">Default duration (min)</label>
+        <input type="number" id="student-duration" class="form-input" value="60" step="30" min="30">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Default price ($)</label>
+        <input type="number" id="student-price" class="form-input" value="80" step="5" min="0">
+      </div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Notes</label>
+      <textarea id="student-notes" class="form-input" rows="2"></textarea>
+    </div>
+    <div class="btn-group">
+      <button class="btn btn-primary" onclick="Coach.saveStudent()">Save Student</button>
+      <button class="btn btn-secondary" onclick="Coach.closeModal('student-modal')">Cancel</button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Setup — Ivan</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="onboarding-page">
+  <div class="onboarding-card">
+    <div class="onboarding-header">
+      <div class="onboarding-logo"><img src="/static/ivan-logo.png" alt="Ivan" class="ivan-logo-img"> <span class="ivan-logo-text">Ivan</span></div>
+      <div class="step-counter">Step <span id="step-num">1</span> of 5</div>
+    </div>
+
+    <div class="progress-dots" id="progress-dots">
+      <div class="progress-dot active" data-step="1"></div>
+      <div class="progress-dot" data-step="2"></div>
+      <div class="progress-dot" data-step="3"></div>
+      <div class="progress-dot" data-step="4"></div>
+      <div class="progress-dot" data-step="5"></div>
+    </div>
+
+    <!-- ============================================ STEP 1 — Welcome -->
+    <section class="onb-step" data-step="1">
+      <div class="welcome-hero">
+        <span class="welcome-icon">
+          <svg class="tennis-ball" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M5 5c3 2.6 3 10.8 0 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M19 5c-3 2.6-3 10.8 0 14" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+          </svg>
+        </span>
+        <div class="welcome-title">Welcome to Ivan</div>
+        <div class="welcome-subtitle">Find tennis coaching leads on Facebook — automatically.</div>
+      </div>
+      <div class="onboarding-subtitle">
+        This quick setup takes about 2 minutes. We'll connect your Facebook account, add your
+        local groups, set your keywords, and write your reply messages. By the end, your lead
+        monitor will be ready to run.
+      </div>
+      <div class="feature-list">
+        <div class="feature-item">Connect your Facebook account securely</div>
+        <div class="feature-item">Add the local groups you want to monitor</div>
+        <div class="feature-item">Pick the keywords that matter to you</div>
+        <div class="feature-item">Write replies that sound like you</div>
+      </div>
+      <div class="onboarding-nav">
+        <span></span>
+        <button class="btn btn-primary onb-float" onclick="onbNext(1)">Let's Get Started →</button>
+      </div>
+    </section>
+
+    <!-- ============================================ STEP 2 — Facebook -->
+    <section class="onb-step" data-step="2" hidden>
+      <div class="onboarding-title"><i class="ti ti-brand-facebook step-title-icon"></i> Connect Your Facebook Account</div>
+      <div class="onboarding-subtitle">
+        We need to log in once to scan your groups. Your credentials are never stored — only a
+        secure session cookie is saved locally on your computer.
+      </div>
+      <ol class="step-instructions">
+        <li><span class="step-num">1</span> Click "Connect Facebook" below</li>
+        <li><span class="step-num">2</span> A browser window will open</li>
+        <li><span class="step-num">3</span> Log in to your Facebook account normally</li>
+        <li><span class="step-num">4</span> Come back here and click "I'm Logged In"</li>
+      </ol>
+      <div class="connection-status">
+        <span class="connection-dot {{ 'connected' if session_status == 'set' else '' }}" id="conn-dot"></span>
+        <span id="conn-text">{{ 'Connected' if session_status == 'set' else 'Not connected' }}</span>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="onbConnectFacebook()"><i class="ti ti-brand-facebook"></i> Connect Facebook</button>
+        <button class="btn btn-secondary" id="onb-logged-in-btn" onclick="onbNext(2)"
+                style="display:none;"><i class="ti ti-check"></i> I'm Logged In</button>
+      </div>
+      <div class="onboarding-nav">
+        <button class="btn btn-secondary" onclick="onbBack(2)">Back</button>
+        <a class="text-muted" href="#" onclick="event.preventDefault();onbSkip(2)">Skip for now (you can connect later in Settings)</a>
+      </div>
+    </section>
+
+    <!-- ============================================ STEP 3 — Groups -->
+    <section class="onb-step" data-step="3" hidden>
+      <div class="onboarding-title"><i class="ti ti-map-pin step-title-icon"></i> Add Your Facebook Groups</div>
+      <div class="onboarding-subtitle">
+        Add the Sydney Facebook groups where your potential clients post. You can always add more later.
+      </div>
+
+      <div class="form-label">Example names — you must paste the real Facebook group URL</div>
+      <div class="info-callout"><i class="ti ti-info-circle"></i> Find groups on Facebook, copy the URL from your browser, and paste it in the field below.</div>
+      <div class="suggestion-grid" id="suggestion-grid">
+        {% for s in ["Sydney Tennis Community","Sydney Sports & Activities","Eastern Suburbs Sydney Community","North Shore Sydney Community"] %}
+        <div class="suggestion-chip" onclick="onbPickSuggestion(this)" data-name="{{ s }}">{{ s }} · Click to add</div>
+        {% endfor %}
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Group Name</label>
+          <input type="text" id="onb-group-name" class="form-input" placeholder="Sydney Tennis Community">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Facebook Group URL</label>
+          <input type="text" id="onb-group-url" class="form-input" placeholder="https://www.facebook.com/groups/...">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Location</label>
+          <input type="text" id="onb-group-location" class="form-input" value="Sydney">
+        </div>
+      </div>
+      <button class="btn btn-secondary" onclick="onbAddGroup()">Add Group</button>
+
+      <div class="chips" id="onb-groups-chips" style="margin-top:12px;">
+        {% for g in groups %}
+        <span class="chip" data-id="{{ g.id }}">
+          <span>{{ g.name }}</span>
+          <button type="button" class="chip-remove" onclick="onbRemoveGroup('{{ g.id }}')">×</button>
+        </span>
+        {% endfor %}
+      </div>
+
+      <div class="onboarding-nav">
+        <button class="btn btn-secondary" onclick="onbBack(3)">Back</button>
+        <button class="btn btn-primary" onclick="onbNext(3)">Next →</button>
+      </div>
+    </section>
+
+    <!-- ============================================ STEP 4 — Keywords -->
+    <section class="onb-step" data-step="4" hidden>
+      <div class="onboarding-title"><i class="ti ti-search step-title-icon"></i> What Are You Looking For?</div>
+      <div class="onboarding-subtitle">
+        Choose a preset or customise your keywords. These are the phrases that trigger a lead alert.
+      </div>
+
+      <div class="preset-grid">
+        <div class="preset-card" onclick="onbTogglePreset(this)"
+             data-cat-id="coaching" data-cat-label="Coaching Wanted" data-template="coaching"
+             data-keywords='["tennis coach","tennis coaching","tennis lessons","tennis instructor","coach wanted","looking for coach","tennis tutor","private tennis","tennis training"]'>
+          <span class="preset-icon"><i class="ti ti-whistle"></i></span>
+          <div class="preset-name">Tennis Coaching</div>
+          <div class="preset-desc">People looking for a coach or lessons</div>
+          <div class="preset-count">9 keywords included</div>
+        </div>
+        <div class="preset-card" onclick="onbTogglePreset(this)"
+             data-cat-id="hitting" data-cat-label="Hitting Partner" data-template="hitting"
+             data-keywords='["hitting partner","tennis hitting","hit some tennis","tennis hit","hitting session","rally partner","social tennis"]'>
+          <span class="preset-icon"><i class="ti ti-social"></i></span>
+          <div class="preset-name">Hitting Partner</div>
+          <div class="preset-desc">People wanting someone to hit with</div>
+          <div class="preset-count">7 keywords included</div>
+        </div>
+        <div class="preset-card" onclick="onbTogglePreset(this)"
+             data-cat-id="juniors" data-cat-label="Junior / Kids Tennis" data-template="coaching"
+             data-keywords='["junior tennis","kids tennis","children tennis","tennis for kids","youth tennis","tennis lessons kids","tennis for my son","tennis for my daughter"]'>
+          <span class="preset-icon"><i class="ti ti-star"></i></span>
+          <div class="preset-name">Junior / Kids Tennis</div>
+          <div class="preset-desc">Parents looking for kids coaching</div>
+          <div class="preset-count">8 keywords included</div>
+        </div>
+        <div class="preset-card recommended" onclick="onbToggleAll(this)" data-all="true">
+          <span class="recommended-badge">Recommended</span>
+          <span class="preset-icon"><i class="ti ti-layout-grid"></i></span>
+          <div class="preset-name">All of the Above</div>
+          <div class="preset-desc">Full keyword set</div>
+          <div class="preset-count">24 keywords</div>
+        </div>
+      </div>
+
+      <details class="onb-customise">
+        <summary class="form-label" style="cursor:pointer;">Customise keywords</summary>
+        <div class="chips" id="onb-kw-chips" style="margin-top:12px;"></div>
+        <div class="chip-add">
+          <input type="text" id="onb-kw-input" class="form-input" placeholder="Add a keyword..."
+                 onkeydown="if(event.key==='Enter'){event.preventDefault();onbAddCustomKeyword();}">
+          <button type="button" class="btn btn-secondary" onclick="onbAddCustomKeyword()">Add</button>
+        </div>
+      </details>
+
+      <div class="onboarding-nav">
+        <button class="btn btn-secondary" onclick="onbBack(4)">Back</button>
+        <button class="btn btn-primary" onclick="onbSaveKeywords()">Next →</button>
+      </div>
+    </section>
+
+    <!-- ============================================ STEP 5 — Replies -->
+    <section class="onb-step" data-step="5" hidden>
+      <div class="onboarding-title"><i class="ti ti-message step-title-icon"></i> What Will You Say?</div>
+      <div class="onboarding-subtitle">
+        Write the message people will see when you reply. We'll rotate between a few variations so
+        it looks natural.
+      </div>
+
+      <div id="onb-replies">
+        <div class="reply-item">
+          <div class="reply-number">Reply 1</div>
+          <textarea>Hi! I'm a professional tennis coach based in Sydney with availability for new students. Feel free to DM me if you're interested!</textarea>
+        </div>
+        <div class="reply-item">
+          <div class="reply-number">Reply 2</div>
+          <textarea>Hey! I coach tennis in Sydney — happy to chat about lessons or hitting sessions. Send me a DM!</textarea>
+        </div>
+        <div class="reply-item">
+          <div class="reply-number">Reply 3</div>
+          <textarea>Hi there! I'd love to help — I'm a tennis coach in Sydney. DM me for more details!</textarea>
+        </div>
+      </div>
+      <button class="btn btn-secondary" id="onb-add-reply" onclick="onbAddReply()">Add another reply</button>
+
+      <div class="pro-tip">
+        <i class="ti ti-bulb"></i> Tip: We automatically rotate between your replies so each response looks unique.
+        Use {name} to personalise with the poster's first name.
+      </div>
+
+      <div class="onboarding-nav">
+        <button class="btn btn-secondary" onclick="onbBack(5)">Back</button>
+        <button class="btn btn-primary" onclick="onbFinish()">Finish Setup →</button>
+      </div>
+    </section>
+  </div>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  <script>
+    window.ONB_START_STEP = {{ state.current_step | default(1) }};
+    document.addEventListener('DOMContentLoaded', function () {
+      onbGoTo(window.ONB_START_STEP > 5 ? 1 : window.ONB_START_STEP);
+    });
+  </script>
+</body>
+</html>

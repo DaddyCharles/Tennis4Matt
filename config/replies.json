@@ -1,0 +1,31 @@
+{
+  "templates": [
+    {
+      "id": "coaching",
+      "label": "Coaching Reply",
+      "messages": [
+        "Hi! I'm a professional tennis coach based in Sydney with availability for new students. Feel free to DM me if you're interested! 🎾",
+        "Hey! I coach tennis in Sydney — happy to chat about lessons or hitting sessions. Send me a DM! 😊",
+        "Hi there! I'd love to help — I'm a tennis coach in Sydney. DM me for more details!"
+      ]
+    },
+    {
+      "id": "hitting",
+      "label": "Hitting Partner Reply",
+      "messages": [
+        "Hi! I'm a professional tennis coach based in Sydney with availability for new students. Feel free to DM me if you're interested! 🎾",
+        "Hey! I coach tennis in Sydney — happy to chat about lessons or hitting sessions. Send me a DM! 😊",
+        "Hi there! I'd love to help — I'm a tennis coach in Sydney. DM me for more details!"
+      ]
+    },
+    {
+      "id": "general",
+      "label": "General Reply",
+      "messages": [
+        "Hi! I'm a professional tennis coach based in Sydney with availability for new students. Feel free to DM me if you're interested! 🎾",
+        "Hey! I coach tennis in Sydney — happy to chat about lessons or hitting sessions. Send me a DM! 😊",
+        "Hi there! I'd love to help — I'm a tennis coach in Sydney. DM me for more details!"
+      ]
+    }
+  ]
+}

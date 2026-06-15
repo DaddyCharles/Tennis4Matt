@@ -1,0 +1,199 @@
+{% extends "base.html" %}
+{% block title %}Home{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">{{ greeting.text }}, {{ user_title }} {{ user_name }}</h1>
+    <div class="page-subtitle">{{ today_long }}</div>
+  </div>
+  <button class="btn btn-primary" onclick="Coach.openAddLesson()"><i class="ti ti-plus"></i> Add Lesson</button>
+</div>
+
+<div class="card weather-strip" id="weather-strip">
+  <div class="weather-empty">Loading weather…</div>
+</div>
+
+<div class="coach-cols">
+  <section class="coach-col-main">
+    <div class="card">
+      <div class="activity-head">
+        <div class="card-title"><i class="ti ti-calendar-event"></i> Today's Schedule</div>
+        <span class="text-muted" id="today-date">{{ today }}</span>
+      </div>
+      <div id="today-lessons" class="lesson-list">
+        <div class="empty-state"><div class="empty-title">Loading…</div></div>
+      </div>
+      <div id="today-earnings-line" class="today-earnings"></div>
+    </div>
+  </section>
+
+  <aside class="coach-col-side">
+    <div class="card quick-stats">
+      <div class="card-title">Quick Stats</div>
+      <div class="qstat"><span>This week</span><strong id="stat-week">$0.00</strong></div>
+      <div class="qstat"><span>This month</span><strong id="stat-month">$0.00</strong></div>
+      <div class="qstat"><span>Lessons this week</span><strong id="stat-weekcount">0</strong></div>
+      {% if settings.modules and settings.modules.invoicing %}
+      <div class="qstat"><span>Unpaid invoices</span><strong id="stat-unpaid" class="amber">$0.00</strong></div>
+      {% endif %}
+      <div class="qstat next-lesson" id="next-lesson">
+        <span>Next lesson</span><strong>—</strong>
+      </div>
+    </div>
+    <div id="lights-card"></div>
+  </aside>
+</div>
+
+{% include "_coach_modals.html" %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+const INVOICING_ON = {{ 'true' if settings.modules and settings.modules.invoicing else 'false' }};
+const SMS_ON = {{ 'true' if settings.modules and settings.modules.sms else 'false' }};
+function statusBadge(s) {
+  return `<span class="status-badge status-${s}">${s}</span>`;
+}
+function blocksViz(blocks) {
+  let html = '<div class="blocks-viz">';
+  for (let i = 0; i < blocks; i++) html += '<span class="blk"></span>';
+  return html + '</div>';
+}
+function levelBadge(level) {
+  if (!level) return '';
+  const cls = level.toLowerCase().replace(/\s+/g, '-');
+  return `<span class="badge level-${cls}">${level}</span>`;
+}
+
+async function loadToday() {
+  const data = await Coach.getJSON('/api/lessons/today');
+  const list = document.getElementById('today-lessons');
+  const lessons = (data.lessons || []);
+  if (!lessons.length) {
+    list.innerHTML = `<div class="empty-state">
+      <div class="empty-icon"><i class="ti ti-beach" style="font-size:40px; color:rgba(255,255,255,0.15)"></i></div>
+      <div class="empty-title">No lessons today</div>
+      <div class="empty-desc">Enjoy the day off</div></div>`;
+    document.getElementById('today-earnings-line').textContent = '';
+    return;
+  }
+  let earned = 0, count = 0;
+  list.innerHTML = lessons.map(l => {
+    if (l.status !== 'cancelled') { earned += Number(l.price || 0); count++; }
+    const end = Coach.addMinutes(l.start_time, l.duration_minutes);
+    return `<div class="lesson-card">
+      <div class="lesson-time">
+        <div class="lt-range">${Coach.to12h(l.start_time)}</div>
+        <div class="lt-end">${Coach.to12h(end)}</div>
+      </div>
+      ${blocksViz(l.blocks)}
+      <div class="lesson-body">
+        <div class="lesson-student">${l.student_name} ${levelBadge(l.level)}</div>
+        <div class="lesson-meta">${Coach.money(l.price)} · ${l.duration_minutes} min ${statusBadge(l.status)}</div>
+      </div>
+      <div class="lesson-actions">
+        ${l.status === 'scheduled' ? `<button class="btn-mini" onclick="completeLesson('${l.id}')">Complete</button>
+        <button class="btn-mini secondary" onclick="cancelLesson('${l.id}')">Cancel</button>` : ''}
+        ${SMS_ON && l.status === 'cancelled' ? `<a class="btn-mini" href="/sms?template=rain_cancel&tab=contacts">Send Cancellation SMS</a>` : ''}
+        ${INVOICING_ON && l.status === 'completed' ? `<button class="btn-mini" onclick="generateInvoice('${l.id}')">Generate Invoice</button>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('today-earnings-line').textContent =
+    `Today: ${Coach.money(earned)} from ${count} lesson${count !== 1 ? 's' : ''}`;
+}
+
+async function completeLesson(id) {
+  try { await Coach.postJSON(`/api/lessons/${id}/complete`); Coach.toast('Marked complete', 'success'); loadAll(); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function cancelLesson(id) {
+  try {
+    await Coach.postJSON(`/api/lessons/${id}/cancel`);
+    Coach.toast('Cancelled', 'info');
+    loadAll();
+    if (SMS_ON && confirm('Send a cancellation SMS to affected students?')) {
+      window.location.href = '/sms?template=rain_cancel&tab=contacts';
+    }
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function generateInvoice(id) {
+  try {
+    const r = await Coach.postJSON(`/api/invoices/generate/${id}`);
+    Coach.toast(r.existing ? `Invoice ${r.invoice_number} already exists` : `Invoice ${r.invoice_number} created`, 'success');
+    window.open(`/api/invoices/${r.invoice.id}/pdf`, '_blank');
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+async function loadStats() {
+  const s = await Coach.getJSON('/api/earnings/summary');
+  document.getElementById('stat-week').textContent = Coach.money(s.week);
+  document.getElementById('stat-month').textContent = Coach.money(s.month);
+  const wk = await Coach.getJSON('/api/lessons/week');
+  const active = (wk.lessons || []).filter(l => l.status !== 'cancelled');
+  document.getElementById('stat-weekcount').textContent = active.length;
+
+  if (INVOICING_ON && document.getElementById('stat-unpaid')) {
+    try {
+      const inv = await Coach.getJSON('/api/invoices/summary');
+      document.getElementById('stat-unpaid').textContent = Coach.money(inv.total_outstanding || 0);
+    } catch (e) {}
+  }
+
+  // next lesson countdown
+  const today = await Coach.getJSON('/api/lessons/today');
+  const now = new Date();
+  const upcoming = (today.lessons || []).filter(l => l.status === 'scheduled').map(l => {
+    const [h, m] = l.start_time.split(':').map(Number);
+    const d = new Date(); d.setHours(h, m, 0, 0);
+    return { l, d };
+  }).filter(x => x.d > now).sort((a, b) => a.d - b.d);
+  const nx = document.getElementById('next-lesson');
+  if (upcoming.length) {
+    const mins = Math.round((upcoming[0].d - now) / 60000);
+    const hh = Math.floor(mins / 60), mm = mins % 60;
+    const t = (hh ? hh + 'h ' : '') + mm + 'm';
+    nx.innerHTML = `<span>Next lesson</span><strong>in ${t} — ${upcoming[0].l.student_name}</strong>`;
+  } else {
+    nx.innerHTML = `<span>Next lesson</span><strong>none scheduled</strong>`;
+  }
+}
+
+async function loadLights() {
+  const w = await Coach.getJSON('/api/weather');
+  const card = document.getElementById('lights-card');
+  if (w && w.lights_warning) {
+    card.innerHTML = `<div class="card lights-warning"><i class="ti ti-bulb"></i>
+      Lights on in ${w.lights_warning.minutes_until} minutes<br>
+      <span class="text-muted">Sunset ${Coach.to12h(w.lights_warning.sunset_time)}</span></div>`;
+  } else { card.innerHTML = ''; }
+}
+
+async function loadWeather() {
+  await Coach.renderWeather('weather-strip');
+  if (!SMS_ON) return;
+  try {
+    const w = await Coach.getJSON('/api/weather');
+    const rating = w && w.playability && w.playability.rating;
+    if (rating === 'Poor') {
+      const strip = document.getElementById('weather-strip');
+      if (strip && !strip.querySelector('.wx-warn-btn')) {
+        const a = document.createElement('a');
+        a.className = 'btn btn-warn wx-warn-btn';
+        a.href = '/sms?template=rain_cancel&tab=contacts';
+        a.innerHTML = '<i class="ti ti-alert-triangle"></i> Warn affected students';
+        strip.appendChild(a);
+      }
+    }
+  } catch (e) {}
+}
+
+function loadAll() { loadToday(); loadStats(); }
+window.onLessonsChanged = loadAll;
+loadWeather();
+loadAll();
+loadLights();
+</script>
+{% endblock %}

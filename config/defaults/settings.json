@@ -1,0 +1,82 @@
+{
+  "user_title": "Mr",
+  "user_name": "Scheers",
+  "scan_interval_minutes": 15,
+  "active_hours_start": "07:00",
+  "active_hours_end": "21:00",
+  "daily_limit": 20,
+  "min_delay_seconds": 8.0,
+  "max_delay_seconds": 25.0,
+  "headless_mode": true,
+  "email_notifications": false,
+  "email_address": "",
+  "email_smtp": "",
+  "email_password": "",
+  "bot_running": false,
+  "session_created_at": "",
+  "coach_name": "Matt",
+  "coach_title": "Mr",
+  "location": "Sydney, Australia",
+  "latitude": -33.8688,
+  "longitude": 151.2093,
+  "currency": "AUD",
+  "default_lesson_price": 80,
+  "lesson_prices": {
+    "30min": 45,
+    "60min": 80,
+    "90min": 110,
+    "120min": 140
+  },
+  "court_name": "",
+  "court_address": "",
+  "lights_warning_minutes": 45,
+  "anthropic_api_key": "",
+  "push_notifications_enabled": false,
+  "vapid_public_key": "",
+  "vapid_private_key": "",
+  "vapid_claim_email": "mailto:coach@example.com",
+  "working_hours_start": "07:00",
+  "working_hours_end": "20:00",
+  "timezone": "Australia/Sydney",
+  "modules": {
+    "invoicing": true,
+    "expense_tracker": true,
+    "tax_estimator": true,
+    "waitlist": true,
+    "lesson_packages": true,
+    "sms": true
+  },
+  "twilio": {
+    "account_sid": "",
+    "auth_token": "",
+    "from_number": "",
+    "enabled": false
+  },
+  "invoicing": {
+    "coach_abn": "",
+    "coach_address": "",
+    "bank_name": "",
+    "bank_bsb": "",
+    "bank_account": "",
+    "invoice_prefix": "INV",
+    "next_invoice_number": 1,
+    "payment_terms_days": 7,
+    "gst_registered": false
+  },
+  "tax": {
+    "financial_year_start": "2025-07-01",
+    "other_income": 0,
+    "has_help_debt": false,
+    "has_private_health": false,
+    "quarterly_payg_rate": null
+  },
+  "availability": {
+    "monday": ["07:00", "08:00", "09:00", "10:00", "14:00", "15:00", "16:00", "17:00"],
+    "tuesday": ["07:00", "08:00", "09:00", "16:00", "17:00"],
+    "wednesday": ["07:00", "08:00", "09:00", "10:00", "14:00", "15:00", "16:00", "17:00"],
+    "thursday": ["07:00", "08:00", "09:00", "16:00", "17:00"],
+    "friday": ["07:00", "08:00", "09:00", "10:00", "14:00", "15:00", "16:00"],
+    "saturday": ["08:00", "09:00", "10:00", "11:00"],
+    "sunday": []
+  }
+}

@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Tax{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">Tax Estimator</h1>
+    <div class="page-subtitle" id="fy-subtitle">Australian sole trader estimate</div>
+  </div>
+</div>
+
+<div class="card fy-progress-card">
+  <div class="fy-progress-top"><span id="fy-label">FY</span><span id="fy-days">—</span></div>
+  <div class="fy-bar"><div class="fy-bar-fill" id="fy-bar-fill" style="width:0%"></div></div>
+</div>
+
+<div id="gst-warning" class="biz-banner amber" hidden></div>
+
+<div class="stat-grid biz-stat-grid">
+  <div class="stat-card"><div class="stat-label">This FY Income</div><div class="stat-value" id="t-income">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">Total Deductions</div><div class="stat-value" id="t-deduct">$0.00</div></div>
+  <div class="stat-card"><div class="stat-label">Taxable Profit</div><div class="stat-value" id="t-taxable">$0.00</div></div>
+  <div class="stat-card warn"><div class="stat-label">Estimated Tax</div><div class="stat-value" id="t-tax">$0.00</div></div>
+</div>
+
+<div class="biz-cols">
+  <div class="card">
+    <div class="card-title">Breakdown</div>
+    <div class="tax-breakdown">
+      <div class="detail-row"><span>Gross Income (lessons + packages)</span><strong id="b-gross">$0.00</strong></div>
+      <div class="detail-row"><span>Less: Business Expenses</span><strong id="b-expenses">−$0.00</strong></div>
+      <div class="detail-row total"><span>Net Business Profit</span><strong id="b-net">$0.00</strong></div>
+      <div class="detail-row"><span>Other Income</span><strong id="b-other">+$0.00</strong></div>
+      <div class="detail-row total"><span>Taxable Income</span><strong id="b-taxable">$0.00</strong></div>
+      <div class="detail-row"><span>Income Tax</span><strong id="b-incometax">$0.00</strong></div>
+      <div class="detail-row"><span>Less: LITO Offset</span><strong id="b-lito">−$0.00</strong></div>
+      <div class="detail-row"><span>Medicare Levy (2%)</span><strong id="b-medicare">+$0.00</strong></div>
+      <div class="detail-row total"><span>Estimated Tax Payable</span><strong id="b-payable">$0.00</strong></div>
+      <div class="detail-row"><span>Effective Rate</span><strong id="b-rate">0%</strong></div>
+      <div class="detail-row total teal"><span>Estimated Take-Home</span><strong id="b-takehome">$0.00</strong></div>
+    </div>
+  </div>
+
+  <div class="biz-side">
+    <div class="card biz-banner-card amber">
+      <div class="card-title">Next PAYG Instalment</div>
+      <div class="payg-q" id="payg-q">—</div>
+      <div class="payg-amount" id="payg-amount">$0.00</div>
+      <div class="payg-note">Based on current earnings pace</div>
+    </div>
+
+    <div class="card set-aside-card">
+      <div class="card-title">Set Aside For Tax</div>
+      <div class="set-aside-line"><strong id="set-month">$0.00</strong> / month</div>
+      <div class="set-aside-line"><strong id="set-week">$0.00</strong> / week</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">GST Status</div>
+      <div class="gst-bar"><div class="gst-bar-fill" id="gst-bar-fill" style="width:0%"></div></div>
+      <div class="gst-status-text" id="gst-status-text">—</div>
+    </div>
+
+    <div class="card assumptions-card">
+      <div class="card-title">Assumptions</div>
+      <label class="biz-field"><span>Other income ($/yr)</span>
+        <input type="number" step="0.01" id="a-other" class="biz-input" value="{{ settings.tax.other_income or 0 }}"></label>
+      <label class="biz-check"><input type="checkbox" id="a-help" {{ 'checked' if settings.tax.has_help_debt else '' }}> HELP/HECS debt</label>
+      <label class="biz-check"><input type="checkbox" id="a-health" {{ 'checked' if settings.tax.has_private_health else '' }}> Private health cover</label>
+      <button class="btn btn-primary btn-block" onclick="saveAssumptions()">Save</button>
+      <div class="assumptions-note">This is an estimate only. Speak to your accountant for advice.</div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+async function loadEstimate() {
+  const r = await Coach.getJSON('/api/tax/estimate');
+  document.getElementById('fy-label').textContent = r.fy_label;
+  document.getElementById('fy-subtitle').textContent = r.fy_label + ' — Australian sole trader estimate';
+  document.getElementById('fy-days').textContent = `${r.fy_days_elapsed} of ${r.fy_days_total} days (${r.fy_progress_pct}%)`;
+  document.getElementById('fy-bar-fill').style.width = r.fy_progress_pct + '%';
+
+  document.getElementById('t-income').textContent = Coach.money(r.gross_income);
+  document.getElementById('t-deduct').textContent = Coach.money(r.total_expenses);
+  document.getElementById('t-taxable').textContent = Coach.money(r.taxable_income);
+  document.getElementById('t-tax').textContent = Coach.money(r.estimated_tax_payable);
+
+  document.getElementById('b-gross').textContent = Coach.money(r.gross_income);
+  document.getElementById('b-expenses').textContent = '−' + Coach.money(r.total_expenses);
+  document.getElementById('b-net').textContent = Coach.money(r.net_business_profit);
+  document.getElementById('b-other').textContent = '+' + Coach.money(r.other_income);
+  document.getElementById('b-taxable').textContent = Coach.money(r.taxable_income);
+  document.getElementById('b-incometax').textContent = Coach.money(r.income_tax);
+  document.getElementById('b-lito').textContent = '−' + Coach.money(r.lito_offset);
+  document.getElementById('b-medicare').textContent = '+' + Coach.money(r.medicare_levy);
+  document.getElementById('b-payable').textContent = Coach.money(r.estimated_tax_payable);
+  document.getElementById('b-rate').textContent = r.effective_rate + '%';
+  document.getElementById('b-takehome').textContent = Coach.money(r.take_home_estimate);
+
+  document.getElementById('set-month').textContent = Coach.money(r.monthly_set_aside);
+  document.getElementById('set-week').textContent = Coach.money(r.weekly_set_aside);
+
+  const payg = r.next_payg || {};
+  document.getElementById('payg-q').textContent = `${payg.quarter} Payment — Due ${payg.due_label}`;
+  document.getElementById('payg-amount').textContent = Coach.money(r.quarterly_payg_estimate);
+
+  const warn = document.getElementById('gst-warning');
+  if (r.gst_warning) {
+    warn.hidden = false;
+    warn.innerHTML = `<i class="ti ti-alert-triangle"></i> You are approaching the GST registration threshold. Current turnover: ${Coach.money(r.gross_income)} of $75,000.00 — consider registering for GST.`;
+  } else { warn.hidden = true; }
+}
+
+async function loadGst() {
+  const g = await Coach.getJSON('/api/tax/gst-status');
+  const fill = document.getElementById('gst-bar-fill');
+  fill.style.width = Math.min(100, g.pct) + '%';
+  fill.className = 'gst-bar-fill gst-' + g.level;
+  document.getElementById('gst-status-text').textContent = `${Coach.money(g.turnover)} of $75,000.00 — ${g.message}`;
+}
+
+async function saveAssumptions() {
+  try {
+    await Coach.postJSON('/api/tax/save-assumptions', {
+      other_income: document.getElementById('a-other').value,
+      has_help_debt: document.getElementById('a-help').checked,
+      has_private_health: document.getElementById('a-health').checked,
+    });
+    Coach.toast('Saved', 'success');
+    loadEstimate();
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+loadEstimate();
+loadGst();
+</script>
+{% endblock %}

@@ -1,0 +1,42 @@
+# ── Python ───────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+
+# ── Virtual environments ─────────────────────────────────
+venv/
+.venv/
+.testvenv/
+
+# ── OS / editor cruft ────────────────────────────────────
+.DS_Store
+
+# ── Logs ─────────────────────────────────────────────────
+logs/
+logs/*.log
+
+# ── Saved Facebook session (private) ─────────────────────
+session/session.json
+
+# ── Runtime data files (private) ─────────────────────────
+# Clean starting templates live in data/defaults/ and are
+# copied into place on first run by main.py.
+data/leads.json
+data/students.json
+data/lessons.json
+data/invoices.json
+data/expenses.json
+data/packages.json
+data/sms_contacts.json
+data/notifications.json
+
+# ── Runtime config (private) ─────────────────────────────
+# Clean starting templates live in config/defaults/.
+config/replied_posts.json
+config/onboarding.json
+config/settings.json
+
+# Keep the defaults templates tracked even though the live
+# files above are ignored.
+!data/defaults/
+!config/defaults/

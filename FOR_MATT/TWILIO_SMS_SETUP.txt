@@ -1,0 +1,72 @@
+============================================================
+
+   SETTING UP SMS IN IVAN
+
+============================================================
+
+This lets you text your students directly from Ivan.
+
+Cost: about $0.08 per text message.
+
+
+------------------------------------------------------------
+   STEP 1  -  Create a Twilio account (free)
+------------------------------------------------------------
+
+   - Go to:  twilio.com
+   - Click "Sign Up" - it is free to start
+   - You get $15 credit to try it out
+
+
+------------------------------------------------------------
+   STEP 2  -  Get an Australian phone number
+------------------------------------------------------------
+
+   - In Twilio Console, click "Phone Numbers"
+   - Click "Buy a Number"
+   - Search for Australia (+61)
+   - Buy one - costs about $2/month
+
+
+------------------------------------------------------------
+   STEP 3  -  Get your credentials
+------------------------------------------------------------
+
+   In Twilio Console, on the home page you will see:
+
+      Account SID  (starts with AC...)
+      Auth Token   (click to reveal)
+
+   Copy both of these.
+
+
+------------------------------------------------------------
+   STEP 4  -  Enter in Ivan
+------------------------------------------------------------
+
+   - Open Ivan in your browser
+   - Go to Settings (bottom of left menu)
+   - Scroll to "SMS / Twilio" section
+   - Paste your Account SID
+   - Paste your Auth Token
+   - Enter your Twilio phone number (e.g. +61480123456)
+   - Click "Test Connection"
+
+   You should receive a test text on your phone!
+
+
+------------------------------------------------------------
+   STEP 5  -  You're ready
+------------------------------------------------------------
+
+   - Go to SMS in the left menu
+   - Add your students as contacts
+   - Create groups (e.g. "Monday Group")
+   - Start sending!
+
+
+------------------------------------------------------------
+
+   NEED HELP? Call Charlie: 0408382271
+
+============================================================

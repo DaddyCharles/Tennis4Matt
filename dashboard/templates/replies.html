@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Replies{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <h1>Reply Templates</h1>
+  <button class="btn btn-primary" onclick="saveReplies()">Save Replies</button>
+</div>
+
+<p class="note">Messages rotate randomly. Use {name} to insert the poster's first name.</p>
+
+{% if not replies.templates %}
+<div class="card">
+  <div class="empty-state">
+    <div class="empty-icon"><i class="ti ti-message"></i></div>
+    <div class="empty-title">No reply templates yet</div>
+    <div class="empty-desc">Run the setup wizard or load a keyword preset to create reply templates.</div>
+  </div>
+</div>
+{% endif %}
+
+{% for template in replies.templates %}
+<div class="card" data-template-id="{{ template.id }}" data-template-label="{{ template.label }}">
+  <div class="card-title">{{ template.label }}</div>
+  <div id="tmpl-msgs-{{ template.id }}">
+    {% for message in template.messages %}
+    <div class="form-group reply-variant">
+      <div class="flex gap-1">
+        <textarea class="form-input reply-message">{{ message }}</textarea>
+        <button type="button" class="btn btn-danger btn-small" onclick="this.closest('.reply-variant').remove()">Delete</button>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  <button type="button" class="btn btn-secondary btn-small" onclick="addReplyVariant('{{ template.id }}')">Add Variant</button>
+</div>
+{% endfor %}
+
+{% endblock %}

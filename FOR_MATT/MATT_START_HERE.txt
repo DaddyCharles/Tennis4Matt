@@ -1,0 +1,14 @@
+IVAN — MATT'S GUIDE
+===================
+
+FIRST TIME ONLY:
+Double-click 1_SETUP.bat
+Wait 3 minutes for it to finish
+
+EVERY DAY:
+Double-click 2_START.bat
+Ivan opens automatically in your browser
+
+OR use the Ivan shortcut on your Desktop
+
+NEED HELP? Call Charlie: 0408382271

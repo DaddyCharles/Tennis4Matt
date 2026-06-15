@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}Keywords{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Keywords</h1>
+    <div class="page-subtitle">Choose a ready-made preset or build your own categories</div>
+  </div>
+  <button class="btn btn-primary" onclick="saveKeywords()">Save Keywords</button>
+</div>
+
+<div class="tab-bar">
+  <button class="tab-btn active" data-tab="presets" onclick="switchTab('presets')">Presets</button>
+  <button class="tab-btn" data-tab="custom" onclick="switchTab('custom')">Custom</button>
+</div>
+
+<!-- ----------------------------------------------------------- Presets tab -->
+<div class="tab-panel active" id="tab-presets">
+  <p class="text-muted mb-1">Loading a preset replaces your current categories and exclusions.</p>
+  {% if presets %}
+  <div class="preset-grid">
+    {% for preset in presets %}
+    {% set kw_count = preset.categories | map(attribute='keywords') | map('length') | sum %}
+    <div class="preset-card {{ 'active-preset' if preset.id == active_preset else '' }}">
+      <div class="preset-label">{{ preset.label }}</div>
+      <div class="preset-desc">{{ preset.description }}</div>
+      <div class="preset-meta">{{ preset.categories | length }} categories · {{ kw_count }} keywords</div>
+      <div>
+        {% if preset.id == active_preset %}
+        <button class="btn btn-secondary btn-small" onclick="loadPreset('{{ preset.id }}')">Reload Preset</button>
+        {% else %}
+        <button class="btn btn-primary btn-small" onclick="loadPreset('{{ preset.id }}')">Load Preset</button>
+        {% endif %}
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty-state">No presets available.</div>
+  {% endif %}
+</div>
+
+<!-- ------------------------------------------------------------ Custom tab -->
+<div class="tab-panel" id="tab-custom">
+  <p class="text-muted mb-1">A post becomes a lead when it contains any keyword below — unless it also contains an exclusion phrase.</p>
+
+  {% if not keywords.categories %}
+  <div class="empty-state">
+    <div class="empty-icon"><i class="ti ti-search"></i></div>
+    <div class="empty-title">No keyword categories yet</div>
+    <div class="empty-desc">Load a preset from the Presets tab to get started quickly.</div>
+  </div>
+  {% endif %}
+
+  {% for category in keywords.categories %}
+  <div class="card" data-category="{{ category.id }}" data-label="{{ category.label }}" data-template="{{ category.reply_template_id }}">
+    <div class="flex between center">
+      <div class="card-title">{{ category.label }}</div>
+      <span class="text-muted">Reply template: {{ category.reply_template_id }}</span>
+    </div>
+    <div class="chips" id="kw-chips-{{ category.id }}">
+      {% for kw in category.keywords %}
+      <span class="chip" data-value="{{ kw }}">
+        <span>{{ kw }}</span>
+        <button type="button" class="chip-remove" onclick="this.closest('.chip').remove()">×</button>
+      </span>
+      {% endfor %}
+    </div>
+    <div class="chip-add">
+      <input type="text" class="form-input" id="kw-input-{{ category.id }}" placeholder="Add keyword..."
+             onkeydown="if(event.key==='Enter'){event.preventDefault();addKeyword('{{ category.id }}');}">
+      <button type="button" class="btn btn-secondary" onclick="addKeyword('{{ category.id }}')">Add</button>
+    </div>
+  </div>
+  {% endfor %}
+
+  <div class="card">
+    <div class="card-title">Exclusions</div>
+    <p class="text-muted">If any of these phrases appear in a post, it is ignored even if a keyword matched.</p>
+    <div class="chips" id="excl-chips">
+      {% for ex in keywords.exclusions %}
+      <span class="chip chip-exclusion" data-value="{{ ex }}">
+        <span>{{ ex }}</span>
+        <button type="button" class="chip-remove" onclick="this.closest('.chip').remove()">×</button>
+      </span>
+      {% endfor %}
+    </div>
+    <div class="chip-add">
+      <input type="text" class="form-input" id="excl-input" placeholder="Add exclusion phrase..."
+             onkeydown="if(event.key==='Enter'){event.preventDefault();addExclusion();}">
+      <button type="button" class="btn btn-secondary" onclick="addExclusion()">Add</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}

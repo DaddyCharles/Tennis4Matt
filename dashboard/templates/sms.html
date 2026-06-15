@@ -1,0 +1,486 @@
+{% extends "base.html" %}
+{% block title %}SMS{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">SMS</h1>
+    <div class="page-subtitle">Text individual students or whole groups</div>
+  </div>
+  <button class="btn btn-secondary" onclick="openTestSms()"><i class="ti ti-send"></i> Send Test</button>
+</div>
+
+{% if not twilio_ready %}
+<div class="card sms-setup-warn">
+  <i class="ti ti-alert-triangle"></i>
+  Twilio is not configured yet. Add your credentials in
+  <a href="/settings">Settings</a> before sending messages.
+</div>
+{% endif %}
+
+<div class="sms-cols">
+  <!-- LEFT: contacts & groups -->
+  <section class="card sms-left">
+    <div class="sms-tabs">
+      <button class="sms-tab active" data-tab="groups" onclick="switchTab('groups')">Groups</button>
+      <button class="sms-tab" data-tab="contacts" onclick="switchTab('contacts')">Contacts</button>
+    </div>
+
+    <div id="tab-groups" class="sms-tab-panel">
+      <button class="btn btn-primary btn-block" onclick="openGroupModal()"><i class="ti ti-plus"></i> New Group</button>
+      <div id="groups-list" class="sms-scroll"></div>
+    </div>
+
+    <div id="tab-contacts" class="sms-tab-panel" hidden>
+      <input type="text" id="contact-search" class="biz-input" placeholder="Search contacts…" oninput="renderContacts()">
+      <div class="sms-row-actions">
+        <button class="btn-mini" onclick="selectAllContacts()">Select All</button>
+        <button class="btn-mini secondary" onclick="clearSelection()">Clear</button>
+        <button class="btn-mini" onclick="openContactModal()">Add Contact</button>
+        <button class="btn-mini" onclick="importStudents()">Import from Students</button>
+      </div>
+      <div id="contacts-list" class="sms-scroll"></div>
+    </div>
+  </section>
+
+  <!-- RIGHT: compose & send -->
+  <section class="card sms-right">
+    <div class="sms-recipients" id="sms-recipients">
+      <span class="text-muted">No recipients selected.</span>
+    </div>
+
+    <div class="sms-templates" id="sms-templates"></div>
+
+    <textarea id="sms-message" class="sms-textarea" placeholder="Type your message…" oninput="onMessageInput()"></textarea>
+    <div class="sms-meta-row">
+      <span class="note">Use {name} for first name, {time} for lesson time, {date}, {amount}.</span>
+      <span class="sms-charcount" id="sms-charcount">0 chars</span>
+    </div>
+    <label class="biz-check"><input type="checkbox" id="sms-personalise" checked onchange="renderPreview()"> Send personalised (replace {name} with each person's name)</label>
+
+    <div class="sms-preview" id="sms-preview" hidden></div>
+
+    <button class="btn btn-primary btn-send-sms btn-block" id="sms-send-btn" onclick="confirmSend()" disabled>Send</button>
+
+    <div class="sms-history">
+      <div class="card-title"><i class="ti ti-history"></i> Recent Sends</div>
+      <div id="sms-history-list"><div class="biz-empty">No messages sent yet.</div></div>
+    </div>
+  </section>
+</div>
+
+<!-- New / edit group modal -->
+<div id="group-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="group-modal-title">New Group</h2>
+      <button class="modal-x" onclick="Coach.closeModal('group-modal')" aria-label="Close">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Group name</label>
+      <input type="text" id="group-name" class="form-input" placeholder="Monday Group">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Description</label>
+      <input type="text" id="group-desc" class="form-input" placeholder="All students who play Monday">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Colour</label>
+      <input type="color" id="group-colour" class="form-input sms-colour" value="#00c88a">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Members</label>
+      <div id="group-members" class="sms-member-pick"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="Coach.closeModal('group-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveGroup()">Save Group</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add / edit contact modal -->
+<div id="contact-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2 id="contact-modal-title">Add Contact</h2>
+      <button class="modal-x" onclick="Coach.closeModal('contact-modal')" aria-label="Close">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Name</label>
+      <input type="text" id="contact-name" class="form-input" placeholder="James Chen">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Phone</label>
+      <input type="text" id="contact-phone" class="form-input" placeholder="0412 345 678">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Tags (comma separated)</label>
+      <input type="text" id="contact-tags" class="form-input" placeholder="Monday Group, Advanced">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="Coach.closeModal('contact-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveContact()">Save Contact</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm send modal -->
+<div id="confirm-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Confirm Send</h2>
+      <button class="modal-x" onclick="Coach.closeModal('confirm-modal')" aria-label="Close">&times;</button>
+    </div>
+    <p id="confirm-text"></p>
+    <p class="note" id="confirm-cost"></p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="Coach.closeModal('confirm-modal')">Cancel</button>
+      <button class="btn btn-primary" id="confirm-send-btn" onclick="doSend()">Confirm Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- Test SMS modal -->
+<div id="test-modal" class="modal-overlay">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h2>Send Test SMS</h2>
+      <button class="modal-x" onclick="Coach.closeModal('test-modal')" aria-label="Close">&times;</button>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Send to (your own number)</label>
+      <input type="text" id="test-number" class="form-input" placeholder="0412 345 678">
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="Coach.closeModal('test-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="sendTest()">Send Test</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+const COST_PER_SMS = 0.08;
+let CONTACTS = {{ contacts | tojson }};
+let GROUPS = {{ groups | tojson }};
+const TEMPLATES = {{ templates | tojson }};
+
+// selection state
+let selectedGroupId = null;
+let selectedContactIds = new Set();
+let editingGroupId = null;
+let editingContactId = null;
+
+function esc(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+function firstName(name) { return (name || 'there').trim().split(/\s+/)[0]; }
+
+function switchTab(tab) {
+  document.querySelectorAll('.sms-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('tab-groups').hidden = tab !== 'groups';
+  document.getElementById('tab-contacts').hidden = tab !== 'contacts';
+}
+
+/* ---- Render lists ---------------------------------------------------- */
+function renderGroups() {
+  const box = document.getElementById('groups-list');
+  if (!GROUPS.length) { box.innerHTML = '<div class="biz-empty">No groups yet. Create one to message several students at once.</div>'; return; }
+  box.innerHTML = GROUPS.map(g => {
+    const count = (g.contact_ids || []).length;
+    const sel = g.id === selectedGroupId ? ' selected' : '';
+    return `<div class="sms-group-card${sel}">
+      <div class="sms-group-head">
+        <span class="sms-dot" style="background:${esc(g.colour || '#00c88a')}"></span>
+        <strong>${esc(g.name)}</strong>
+      </div>
+      <div class="note">${count} contact${count !== 1 ? 's' : ''}${g.description ? ' · ' + esc(g.description) : ''}</div>
+      <div class="sms-card-actions">
+        <button class="btn-mini" onclick="selectGroup('${g.id}')">Select</button>
+        <button class="btn-mini secondary" onclick="openGroupModal('${g.id}')">Edit</button>
+        <button class="btn-mini danger" onclick="deleteGroup('${g.id}')">Delete</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderContacts() {
+  const box = document.getElementById('contacts-list');
+  const q = (document.getElementById('contact-search').value || '').toLowerCase();
+  const list = CONTACTS.filter(c => !q || (c.name || '').toLowerCase().includes(q) || (c.phone || '').includes(q));
+  if (!list.length) { box.innerHTML = '<div class="biz-empty">No contacts. Add one or import your students.</div>'; return; }
+  box.innerHTML = list.map(c => {
+    const checked = selectedContactIds.has(c.id) ? 'checked' : '';
+    const tags = (c.tags || []).filter(Boolean).map(t => `<span class="sms-tag">${esc(t)}</span>`).join('');
+    return `<label class="sms-contact-row">
+      <input type="checkbox" ${checked} onchange="toggleContact('${c.id}', this.checked)">
+      <span class="sms-contact-main">
+        <strong>${esc(c.name)}</strong>
+        <span class="note">${esc(c.phone)}</span>
+        <span class="sms-tags">${tags}</span>
+      </span>
+      <button class="btn-mini danger" onclick="event.preventDefault();deleteContact('${c.id}')">Del</button>
+    </label>`;
+  }).join('');
+}
+
+function renderTemplates() {
+  document.getElementById('sms-templates').innerHTML = TEMPLATES.map(t =>
+    `<button class="sms-pill" onclick="loadTemplate('${t.id}')">${esc(t.label)}</button>`).join('');
+}
+
+/* ---- Selection ------------------------------------------------------- */
+function selectGroup(id) {
+  selectedGroupId = id;
+  selectedContactIds.clear();
+  renderGroups();
+  renderContacts();
+  updateRecipients();
+}
+function toggleContact(id, on) {
+  selectedGroupId = null;
+  if (on) selectedContactIds.add(id); else selectedContactIds.delete(id);
+  renderGroups();
+  updateRecipients();
+}
+function selectAllContacts() {
+  selectedGroupId = null;
+  CONTACTS.forEach(c => selectedContactIds.add(c.id));
+  renderContacts();
+  updateRecipients();
+}
+function clearSelection() {
+  selectedGroupId = null;
+  selectedContactIds.clear();
+  renderGroups();
+  renderContacts();
+  updateRecipients();
+}
+
+function currentRecipients() {
+  if (selectedGroupId) {
+    const g = GROUPS.find(x => x.id === selectedGroupId);
+    const ids = new Set((g && g.contact_ids) || []);
+    return CONTACTS.filter(c => ids.has(c.id) && c.active !== false);
+  }
+  return CONTACTS.filter(c => selectedContactIds.has(c.id));
+}
+
+function recipientPayload() {
+  if (selectedGroupId) return { recipient_type: 'group', recipient_id: selectedGroupId };
+  return { recipient_type: 'contact', recipient_id: Array.from(selectedContactIds) };
+}
+
+function updateRecipients() {
+  const box = document.getElementById('sms-recipients');
+  const recips = currentRecipients();
+  const btn = document.getElementById('sms-send-btn');
+  if (!recips.length) {
+    box.innerHTML = '<span class="text-muted">No recipients selected.</span>';
+    btn.disabled = true;
+    btn.textContent = 'Send';
+  } else {
+    let label;
+    if (selectedGroupId) {
+      const g = GROUPS.find(x => x.id === selectedGroupId);
+      label = `${esc(g.name)} (${recips.length} contact${recips.length !== 1 ? 's' : ''})`;
+    } else {
+      const names = recips.slice(0, 3).map(c => esc(firstName(c.name))).join(', ');
+      label = `${names}${recips.length > 3 ? ' +' + (recips.length - 3) + ' more' : ''} (${recips.length} contact${recips.length !== 1 ? 's' : ''})`;
+    }
+    box.innerHTML = `Sending to: <strong>${label}</strong> <button class="btn-mini secondary" onclick="clearSelection()">Clear</button>`;
+    const ready = (document.getElementById('sms-message').value || '').trim().length > 0;
+    btn.disabled = !ready;
+    btn.textContent = `Send to ${recips.length} contact${recips.length !== 1 ? 's' : ''}`;
+  }
+  renderPreview();
+}
+
+/* ---- Compose --------------------------------------------------------- */
+function loadTemplate(id) {
+  const t = TEMPLATES.find(x => x.id === id);
+  if (!t) return;
+  document.getElementById('sms-message').value = t.text;
+  onMessageInput();
+}
+function onMessageInput() {
+  const v = document.getElementById('sms-message').value || '';
+  document.getElementById('sms-charcount').textContent = `${v.length} chars · ${Math.max(1, Math.ceil(v.length / 160))} SMS`;
+  updateRecipients();
+}
+function renderPreview() {
+  const box = document.getElementById('sms-preview');
+  const on = document.getElementById('sms-personalise').checked;
+  const msg = document.getElementById('sms-message').value || '';
+  const recips = currentRecipients();
+  if (!on || !msg || !recips.length) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = recips.slice(0, 3).map(c => {
+    const text = msg.replace(/\{name\}/g, firstName(c.name));
+    return `<div class="sms-preview-item"><span class="note">Preview for ${esc(c.name)}</span><div>"${esc(text)}"</div></div>`;
+  }).join('');
+}
+
+/* ---- Send ------------------------------------------------------------ */
+function confirmSend() {
+  const recips = currentRecipients();
+  if (!recips.length) { Coach.toast('No recipients selected', 'error'); return; }
+  const msg = (document.getElementById('sms-message').value || '').trim();
+  if (!msg) { Coach.toast('Message is empty', 'error'); return; }
+  document.getElementById('confirm-text').textContent =
+    `You are about to send ${recips.length} SMS message${recips.length !== 1 ? 's' : ''}.`;
+  document.getElementById('confirm-cost').textContent =
+    `Estimated cost: ~$${(recips.length * COST_PER_SMS).toFixed(2)} AUD`;
+  document.getElementById('confirm-modal').classList.add('open');
+}
+async function doSend() {
+  Coach.closeModal('confirm-modal');
+  const body = Object.assign(recipientPayload(), {
+    message_text: (document.getElementById('sms-message').value || '').trim(),
+    personalise: document.getElementById('sms-personalise').checked,
+  });
+  try {
+    const r = await Coach.postJSON('/api/sms/send', body);
+    const res = r.result || {};
+    Coach.toast(`${res.sent || 0} sent, ${res.failed || 0} failed`, (res.failed ? 'info' : 'success'));
+    loadHistory();
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+/* ---- Groups CRUD ----------------------------------------------------- */
+function openGroupModal(id) {
+  editingGroupId = id || null;
+  const g = id ? GROUPS.find(x => x.id === id) : null;
+  document.getElementById('group-modal-title').textContent = g ? 'Edit Group' : 'New Group';
+  document.getElementById('group-name').value = g ? g.name : '';
+  document.getElementById('group-desc').value = g ? (g.description || '') : '';
+  document.getElementById('group-colour').value = g ? (g.colour || '#00c88a') : '#00c88a';
+  const member = new Set((g && g.contact_ids) || []);
+  document.getElementById('group-members').innerHTML = CONTACTS.length
+    ? CONTACTS.map(c => `<label class="sms-member-row"><input type="checkbox" value="${c.id}" ${member.has(c.id) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('')
+    : '<span class="note">No contacts yet. Add contacts first.</span>';
+  document.getElementById('group-modal').classList.add('open');
+}
+async function saveGroup() {
+  const name = document.getElementById('group-name').value.trim();
+  if (!name) { Coach.toast('Group name required', 'error'); return; }
+  const ids = Array.from(document.querySelectorAll('#group-members input:checked')).map(i => i.value);
+  const body = {
+    name,
+    description: document.getElementById('group-desc').value.trim(),
+    colour: document.getElementById('group-colour').value,
+    contact_ids: ids,
+  };
+  try {
+    if (editingGroupId) await Coach.postJSON(`/api/sms/groups/${editingGroupId}/edit`, body);
+    else await Coach.postJSON('/api/sms/groups/add', body);
+    Coach.closeModal('group-modal');
+    Coach.toast('Group saved', 'success');
+    await refreshData();
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function deleteGroup(id) {
+  if (!confirm('Delete this group?')) return;
+  try { await Coach.del(`/api/sms/groups/${id}`); if (selectedGroupId === id) selectedGroupId = null; await refreshData(); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+/* ---- Contacts CRUD --------------------------------------------------- */
+function openContactModal(id) {
+  editingContactId = id || null;
+  const c = id ? CONTACTS.find(x => x.id === id) : null;
+  document.getElementById('contact-modal-title').textContent = c ? 'Edit Contact' : 'Add Contact';
+  document.getElementById('contact-name').value = c ? c.name : '';
+  document.getElementById('contact-phone').value = c ? c.phone : '';
+  document.getElementById('contact-tags').value = c ? (c.tags || []).join(', ') : '';
+  document.getElementById('contact-modal').classList.add('open');
+}
+async function saveContact() {
+  const name = document.getElementById('contact-name').value.trim();
+  const phone = document.getElementById('contact-phone').value.trim();
+  if (!name || !phone) { Coach.toast('Name and phone required', 'error'); return; }
+  const tags = document.getElementById('contact-tags').value.split(',').map(s => s.trim()).filter(Boolean);
+  try {
+    if (editingContactId) await Coach.postJSON(`/api/sms/contacts/${editingContactId}/edit`, { name, phone, tags });
+    else await Coach.postJSON('/api/sms/contacts/add', { name, phone, tags });
+    Coach.closeModal('contact-modal');
+    Coach.toast('Contact saved', 'success');
+    await refreshData();
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function deleteContact(id) {
+  if (!confirm('Delete this contact?')) return;
+  try { await Coach.del(`/api/sms/contacts/${id}`); selectedContactIds.delete(id); await refreshData(); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function importStudents() {
+  try {
+    const r = await Coach.postJSON('/api/sms/contacts/import-students', {});
+    Coach.toast(`${r.added} contact${r.added !== 1 ? 's' : ''} imported`, 'success');
+    await refreshData();
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+/* ---- Test ------------------------------------------------------------ */
+function openTestSms() { document.getElementById('test-modal').classList.add('open'); }
+async function sendTest() {
+  const to = document.getElementById('test-number').value.trim();
+  if (!to) { Coach.toast('Enter a number', 'error'); return; }
+  try {
+    await Coach.postJSON('/api/sms/test', { to });
+    Coach.closeModal('test-modal');
+    Coach.toast('Test sent', 'success');
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+/* ---- History --------------------------------------------------------- */
+async function loadHistory() {
+  try {
+    const r = await Coach.getJSON('/api/sms/history');
+    const box = document.getElementById('sms-history-list');
+    const msgs = (r.messages || []).slice(0, 10);
+    if (!msgs.length) { box.innerHTML = '<div class="biz-empty">No messages sent yet.</div>'; return; }
+    box.innerHTML = msgs.map(m => {
+      const d = (m.sent_at || '').slice(0, 16).replace('T', ' ');
+      const preview = esc((m.message_text || '').slice(0, 40));
+      return `<div class="sms-hist-row">
+        <span class="note">${d}</span>
+        <strong>${esc(m.recipient_name)}</strong>
+        <span>${preview}${(m.message_text || '').length > 40 ? '…' : ''}</span>
+        <span class="sms-tag">${m.recipients_count} sent</span>
+      </div>`;
+    }).join('');
+  } catch (e) {}
+}
+
+/* ---- Refresh --------------------------------------------------------- */
+async function refreshData() {
+  const [c, g] = await Promise.all([Coach.getJSON('/api/sms/contacts'), Coach.getJSON('/api/sms/groups')]);
+  CONTACTS = c.contacts || [];
+  GROUPS = g.groups || [];
+  renderGroups();
+  renderContacts();
+  updateRecipients();
+}
+
+// init
+renderGroups();
+renderContacts();
+renderTemplates();
+updateRecipients();
+loadHistory();
+
+// quick-send deep link: /sms?template=rain_cancel
+(function () {
+  const params = new URLSearchParams(location.search);
+  const tpl = params.get('template');
+  if (tpl) loadTemplate(tpl);
+  if (params.get('tab') === 'contacts') switchTab('contacts');
+})();
+</script>
+{% endblock %}

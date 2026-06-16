@@ -75,7 +75,7 @@ async function genInsight() {
         ${i.busiest_day ? `<p><strong>Busiest day:</strong> ${i.busiest_day}</p>` : ''}
         ${i.top_student ? `<p><strong>Top student:</strong> ${i.top_student}</p>` : ''}
         ${i.recommendation ? `<p><strong>Recommendation:</strong> ${i.recommendation}</p>` : ''}`;
-    } else { box.textContent = 'AI not configured. Add an Anthropic API key in Settings.'; }
+    } else { box.textContent = 'AI not configured. Add a GroqCloud API key in Settings.'; }
   } catch (e) { box.textContent = e.message; }
   btn.disabled = false;
 }

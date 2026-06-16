@@ -898,6 +898,8 @@ async function getHelpSettings() {
 function helpPageKey() {
   const p = window.location.pathname;
   if (p === '/' || p.startsWith('/coach')) return 'coach';
+  if (p.startsWith('/money-owed')) return 'money_owed';
+  if (p.startsWith('/leads')) return 'leads';
   for (const k of ['calendar', 'students', 'earnings', 'invoices', 'expenses', 'tax', 'packages', 'sms', 'dashboard', 'settings']) {
     if (p.startsWith('/' + k)) return k;
   }
@@ -906,33 +908,53 @@ function helpPageKey() {
 
 const HELP_CONTENT = {
   coach: {
-    title: 'Today',
-    body: 'Your daily home screen. Shows weather, court conditions, today’s lessons and quick stats.',
+    title: 'Home',
+    body: 'Your daily home screen. The left side is Today’s Schedule — switch between Compact and Timeline with the toggle, and tap a lesson to complete, text or cancel it. The right Weather Rail shows the current conditions, a court-conditions callout, this week’s forecast, and Quick Stats including any money owed.',
     tour: 'basics',
     actions: [
       { icon: 'ti-plus', label: 'Add a lesson', onclick: "closeHelp(); if(window.Coach) Coach.openAddLesson();" },
       { icon: 'ti-calendar', label: 'Open calendar', href: '/calendar' },
-      { icon: 'ti-chart-bar', label: 'View earnings', href: '/earnings' },
+      { icon: 'ti-cash', label: 'Money owed', href: '/money-owed' },
     ],
   },
   calendar: {
     title: 'Calendar',
-    body: 'Your weekly lesson schedule. Click any slot to add a lesson. Click a lesson to edit or cancel it.',
+    body: 'Your lesson schedule in Day, Week or Month view — use the toggle to switch. Tap any empty slot or the + on a day to add a lesson, and tap an existing lesson to edit, complete or cancel it.',
     tour: 'book_lesson',
     actions: [
       { icon: 'ti-plus', label: 'Add a lesson', onclick: "closeHelp(); if(window.Coach) Coach.openAddLesson();" },
-      { icon: 'ti-home', label: 'Back to Today', href: '/coach' },
+      { icon: 'ti-home', label: 'Back to Home', href: '/coach' },
       { icon: 'ti-users', label: 'Manage students', href: '/students' },
     ],
   },
   students: {
     title: 'Students',
-    body: 'All your students in one place. Add new students here. Click a student to see their full history.',
+    body: 'All your students in one place. Add new students here, or add one on the fly while booking a lesson. Tap a student to see their full lesson history, payments and notes.',
     tour: 'add_student',
     actions: [
       { icon: 'ti-user-plus', label: 'Add a student', onclick: "closeHelp(); if(window.Coach) Coach.openAddStudent();" },
       { icon: 'ti-calendar', label: 'Open calendar', href: '/calendar' },
       { icon: 'ti-message-2', label: 'Send an SMS', href: '/sms' },
+    ],
+  },
+  money_owed: {
+    title: 'Money Owed',
+    body: 'Everyone with unpaid lessons, newest debts first. Each card shows how much they owe, how many lessons, and how many days it has been outstanding (amber after a week, red after two). Tap “Mark All Paid” once they pay, or SMS them a reminder.',
+    tour: 'money_owed',
+    actions: [
+      { icon: 'ti-home', label: 'Back to Home', href: '/coach' },
+      { icon: 'ti-users', label: 'View students', href: '/students' },
+      { icon: 'ti-chart-bar', label: 'View earnings', href: '/earnings' },
+    ],
+  },
+  leads: {
+    title: 'Facebook Leads',
+    body: 'People Ivan found asking about coaching in your Facebook groups. Each lead is scored 1–5 stars by how likely they are to book, and tagged New, Contacted or Booked. Use “Suggest Reply” to draft a message to copy into Facebook, then “Convert” to turn a lead into a student. Filter by status, group or text up top.',
+    tour: 'leads',
+    actions: [
+      { icon: 'ti-search', label: 'Keywords', href: '/keywords' },
+      { icon: 'ti-users', label: 'Groups', href: '/groups' },
+      { icon: 'ti-settings', label: 'Lead Monitor settings', href: '/settings' },
     ],
   },
   earnings: {
@@ -1007,12 +1029,12 @@ const HELP_CONTENT = {
   },
   settings: {
     title: 'Settings',
-    body: 'Configure everything about Ivan. Turn features on or off, set your location, prices, and connected services.',
-    tour: 'basics',
+    body: 'Everything about Ivan, grouped into tap-to-open sections. Set your prices and quick presets, your weekly availability (a start and end time per day, with handy presets), and connect SMS (Twilio) and AI (GroqCloud). Both the SMS and AI sections have a “How to set this up?” panel that walks you through it step by step.',
+    tour: 'settings',
     actions: [
       { icon: 'ti-route', label: 'Take Ivan Basics tour', onclick: "closeHelp(); startTour('basics');" },
-      { icon: 'ti-home', label: 'Back to Today', href: '/coach' },
-      { icon: 'ti-refresh', label: 'Re-run setup wizard', onclick: "if(typeof resetOnboarding==='function') resetOnboarding();" },
+      { icon: 'ti-settings', label: 'Settings tour', onclick: "closeHelp(); startTour('settings');" },
+      { icon: 'ti-home', label: 'Back to Home', href: '/coach' },
     ],
   },
 };
@@ -1050,28 +1072,48 @@ function startPageTour() {
 const TOURS = {
   basics: {
     id: 'basics', name: 'Ivan Basics', steps: [
-      { selector: '.sidebar', title: 'Your Main Menu', text: 'Use this to navigate between all parts of Ivan.', position: 'right' },
-      { selector: '.weather-strip', title: 'Weather & Conditions', text: "Today's weather updates automatically. It shows if it's good, marginal, or poor for tennis.", position: 'bottom' },
-      { selector: '.week-forecast', title: '7-Day Forecast', text: 'See which days this week might be rainy. Click any day to see your lessons for that day.', position: 'bottom' },
-      { selector: '#today-lessons', title: "Today's Lessons", text: 'Your lessons for today appear here. Tap Complete after each lesson.', position: 'top' },
-      { selector: '.quick-stats', title: 'Quick Stats', text: 'Your earnings and lesson counts update in real time.', position: 'left' },
+      { selector: '.sidebar', title: 'Your Main Menu', text: 'Use this to navigate between all parts of Ivan — Home, Calendar, Students, Money Owed, Facebook Leads and more.', position: 'right' },
+      { selector: '.schedule-card', title: "Today's Schedule", text: 'Your lessons for today live here. Tap a lesson to mark it complete, text the student, or cancel it.', position: 'right' },
+      { selector: '.sched-view-toggle', title: 'Compact or Timeline', text: 'Switch between a tidy Compact list and a full hour-by-hour Timeline of your day.', position: 'bottom' },
+      { selector: '.wx-card', title: 'Weather & Court Conditions', text: "Today's weather updates automatically. The callout box tells you if it's good, marginal or poor for tennis — and when the lights come on.", position: 'left' },
+      { selector: '.weekpeek-card', title: 'This Week', text: 'A quick look at the week ahead. Tap any day to jump to it in the calendar.', position: 'left' },
+      { selector: '.qstats-card', title: 'Quick Stats', text: 'This week and month at a glance, plus any money owed and your next lesson.', position: 'left' },
     ],
   },
   add_student: {
-    id: 'add_student', name: 'Adding Your First Student', steps: [
+    id: 'add_student', name: 'Adding a Student', steps: [
       { selector: 'a.nav-link[href="/students"]', title: 'Students', text: 'Click Students to manage all your coaching clients.', position: 'right' },
       { selector: 'button[onclick*="openAddStudent"]', title: 'Add Student', text: 'Click here to add a new student.', position: 'bottom' },
-      { selector: '#student-name', title: 'Student Details', text: 'Fill in their name, phone number, and level. The phone number is used for SMS.', position: 'right' },
-      { selector: '#student-modal .btn-primary', title: 'Save', text: 'Click Save Student and they appear in your roster immediately.', position: 'top' },
+      { selector: '#student-name', title: 'Student Details', text: 'Fill in their name, phone, level and default price. The phone number is used for SMS reminders.', position: 'right' },
+      { selector: '#student-modal .btn-primary', title: 'Save', text: 'Click Save Student and they appear in your roster immediately. Tip: you can also add a student on the fly while booking a lesson.', position: 'top' },
     ],
   },
   book_lesson: {
     id: 'book_lesson', name: 'Booking a Lesson', steps: [
-      { selector: 'button[onclick*="openAddLesson"]', title: 'Add Lesson', text: 'Tap this to book a new lesson.', position: 'bottom' },
-      { selector: '#lesson-student', title: 'Choose Student', text: 'Select which student this lesson is for.', position: 'right' },
-      { selector: '.duration-picker', title: 'Lesson Duration', text: 'Pick a duration, or use the +/− stepper for a custom length.', position: 'right' },
-      { selector: '#lesson-price', title: 'Price', text: 'The price fills in automatically from your settings. You can change it here.', position: 'right' },
-      { selector: '#lesson-recurring', title: 'Recurring Lessons', text: 'Turn this on for weekly recurring lessons. Ivan creates all future sessions automatically.', position: 'top' },
+      { selector: 'button[onclick*="openAddLesson"]', title: 'Add Lesson', text: 'Tap Add Lesson on Home or the Calendar to book a new lesson.', position: 'bottom' },
+      { selector: '#lesson-student', title: 'Choose Student', text: 'Pick an existing student — or choose “Add new student” to create one right here without leaving the form.', position: 'right' },
+      { selector: '.date-picker', title: 'Date & Time', text: 'Tap to open the dark date picker and choose the day, then set the start time.', position: 'right' },
+      { selector: '.duration-picker', title: 'Lesson Duration', text: 'Tap a quick-pick (30, 45, 60, 90 min or 2 hours), or use the +/− stepper for a custom length.', position: 'right' },
+      { selector: '#price-presets', title: 'Price', text: 'The price fills in from your settings. Tap a preset to change it instantly, or type any amount.', position: 'right' },
+      { selector: '#lesson-recurring', title: 'Repeat Weekly', text: 'Turn this on to repeat the lesson weekly. Then choose how many weeks (4, 8, 10, 12 or Ongoing) and Ivan books them all.', position: 'top' },
+    ],
+  },
+  money_owed: {
+    id: 'money_owed', name: 'Money Owed', steps: [
+      { selector: 'a.nav-link[href="/money-owed"]', title: 'Money Owed', text: 'Open Money Owed to see exactly who still owes you for lessons.', position: 'right' },
+      { selector: '.owed-summary', title: 'Total Outstanding', text: 'The big number is everything owed across all students right now.', position: 'bottom' },
+      { selector: '.owed-card', title: 'Each Student', text: 'One card per student — how much they owe, how many lessons, and how long it has been outstanding (amber after a week, red after two).', position: 'top' },
+      { selector: 'button[onclick*="markAllPaid"]', title: 'Mark Paid', text: 'When they pay, tap “Mark All Paid” to clear their balance. The SMS button sends a friendly payment reminder.', position: 'top' },
+    ],
+  },
+  leads: {
+    id: 'leads', name: 'Facebook Leads', steps: [
+      { selector: 'a.nav-link[href="/leads"]', title: 'Facebook Leads', text: 'People Ivan found asking about tennis coaching in your Facebook groups.', position: 'right' },
+      { selector: '.lead-stars', title: 'Lead Score', text: 'Each lead is scored 1–5 stars and tagged by intent, so you can spot the hottest prospects first.', position: 'bottom' },
+      { selector: '.filter-bar', title: 'Filter', text: 'Narrow the list by status (New / Contacted / Booked), by group, or by searching the post text.', position: 'bottom' },
+      { selector: 'button[onclick*="suggestReply"]', title: 'Suggest Reply', text: 'Ivan drafts a reply you can copy and paste into Facebook. Ivan never auto-posts — you stay in control.', position: 'top' },
+      { selector: 'button[onclick*="convertLead"]', title: 'Convert to Student', text: 'Once they book, tap Convert to create a student record and mark the lead as Booked.', position: 'top' },
+      { selector: '.lead-mark', title: 'Track the Status', text: 'Move each lead through New → Contacted → Booked so you always know where you stand.', position: 'top' },
     ],
   },
   send_sms: {
@@ -1083,14 +1125,24 @@ const TOURS = {
       { selector: '#sms-send, button[onclick*="send"]', title: 'Send', text: 'Tap Send and Ivan texts all selected contacts. You see a delivery report immediately.', position: 'top' },
     ],
   },
+  settings: {
+    id: 'settings', name: 'Settings Tour', steps: [
+      { selector: 'a.nav-link[href="/settings"]', title: 'Settings', text: 'Everything is configured here. Open Settings to begin.', position: 'right' },
+      { selector: '.settings-accordion', title: 'Tap-to-Open Sections', text: 'Settings are grouped into sections. Tap a section header to open it; tap again to close it.', position: 'bottom' },
+      { selector: '#acc-pricing, [onclick*="\'pricing\'"]', title: 'Pricing & Presets', text: 'Set your per-duration prices and add quick price presets you can tap when booking.', position: 'bottom' },
+      { selector: '#acc-availability, [onclick*="availability"]', title: 'Weekly Availability', text: 'Set a start and end time for each day, or tap a preset like Weekday Mornings. Then Save.', position: 'bottom' },
+      { selector: '#acc-sms, [onclick*="\'sms\'"]', title: 'SMS Setup', text: 'Connect Twilio so Ivan can text students. Open the “How to set up SMS” panel for step-by-step help.', position: 'bottom' },
+      { selector: '#acc-ai, [onclick*="\'ai\'"]', title: 'AI Setup', text: 'Connect a free GroqCloud key for AI extras. Open the “How to set up AI” panel for step-by-step help.', position: 'bottom' },
+    ],
+  },
   twilio_setup: {
     id: 'twilio_setup', name: 'Setting Up SMS with Twilio', steps: [
       { selector: 'a.nav-link[href="/settings"]', title: 'Settings', text: 'First go to Settings.', position: 'right' },
-      { selector: '#modules-section, .modules-grid', title: 'Modules', text: 'Make sure SMS is turned ON here.', position: 'bottom' },
-      { selector: '#twilio-section, #sms-section', title: 'Twilio Setup', text: 'Scroll down to find the Twilio setup section.', position: 'top' },
-      { selector: '#twilio-sid, #twilio_account_sid', title: 'Account SID', text: 'Paste your Twilio Account SID here. You get this from twilio.com.', position: 'right' },
-      { selector: '#twilio-token, #twilio_auth_token', title: 'Auth Token', text: 'Paste your Auth Token here.', position: 'right' },
-      { selector: '#twilio-test, button[onclick*="twilio"]', title: 'Test Connection', text: "Click this to test — you'll receive a test text on your own phone.", position: 'top' },
+      { selector: '#acc-sms, [onclick*="\'sms\'"]', title: 'SMS / Twilio', text: 'Open the SMS / Twilio section. The “How to set up SMS” panel inside has the full step-by-step.', position: 'bottom' },
+      { selector: '#tw_sid', title: 'Account SID', text: 'Paste your Twilio Account SID here. You get it from the Twilio Console at twilio.com.', position: 'right' },
+      { selector: '#tw_token', title: 'Auth Token', text: 'Paste your Auth Token here.', position: 'right' },
+      { selector: '#tw_from', title: 'From Number', text: 'Paste the Australian Twilio number you bought (texts are sent from this number).', position: 'right' },
+      { selector: 'button[onclick*="testTwilio"]', title: 'Test Connection', text: "Click this to test — you'll receive a test text on your own phone.", position: 'top' },
     ],
   },
   earnings_tax: {
@@ -1211,9 +1263,11 @@ async function resetAllTours() {
 
 /* ---- First-use feature tips ----------------------------------------------- */
 const FEATURE_TIPS = {
-  sms: { id: 'tip_sms', text: 'New to SMS? Set up Twilio in Settings first to enable texting. It takes about 5 minutes.', actions: [{ label: 'Set up SMS', href: '/settings' }, { label: 'Dismiss', dismiss: true }] },
+  sms: { id: 'tip_sms', text: 'New to SMS? Connect Twilio in Settings first — open the “How to set up SMS” panel there for a step-by-step guide.', actions: [{ label: 'Set up SMS', href: '/settings' }, { label: 'Dismiss', dismiss: true }] },
   tax: { id: 'tip_tax', text: 'This is an estimate based on your real Ivan data. Always check with your accountant for official advice.', actions: [{ label: 'Got it', dismiss: true }] },
   expenses: { id: 'tip_expenses', text: 'Log your business expenses here to reduce your taxable income. Ivan uses ATO categories for tennis coaches.', actions: [{ label: 'Got it', dismiss: true }] },
+  leads: { id: 'tip_leads', text: 'These are people Ivan found in Facebook groups, scored by how likely they are to book. Use “Suggest Reply” to draft a message, then “Convert” to turn a lead into a student.', actions: [{ label: 'Got it', dismiss: true }] },
+  money_owed: { id: 'tip_money_owed', text: 'Everyone with unpaid lessons, oldest debts first. Tap “Mark All Paid” when a student pays, or SMS them a reminder.', actions: [{ label: 'Got it', dismiss: true }] },
 };
 
 async function maybeShowFeatureTip() {

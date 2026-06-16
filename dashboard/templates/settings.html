@@ -400,13 +400,19 @@
         <button class="btn btn-secondary" onclick="testTwilio()">Test Connection</button>
       </div>
       <div id="twilio-result" class="test-result"></div>
-      <div class="note" style="margin-top:14px;">
-        How to get started:<br>
-        1. Sign up at twilio.com (free trial available)<br>
-        2. Get an Australian phone number (~$2/month)<br>
-        3. Copy your Account SID and Auth Token from the Twilio Console<br>
-        4. Paste them above and click Test Connection
-      </div>
+      <details class="setup-guide">
+        <summary><i class="ti ti-help-circle"></i> How to set up SMS (step by step)</summary>
+        <div class="setup-guide-body">
+          <ol class="setup-steps">
+            <li>Go to <a href="https://www.twilio.com" target="_blank" rel="noopener">twilio.com</a> and sign up. It's free and you get some trial credit to start.</li>
+            <li>In the Twilio Console, open <strong>Phone Numbers</strong> and buy an <strong>Australian</strong> number (about <strong>$2/month</strong>). This is the number your students' texts come from.</li>
+            <li>On the Twilio Console home page, copy your <strong>Account SID</strong> and <strong>Auth Token</strong>.</li>
+            <li>Paste the Account SID, Auth Token and your new Twilio number into the fields above, then click <strong>Save</strong>.</li>
+            <li>Click <strong>Test Connection</strong> — you'll receive a test text on your own phone to confirm it works.</li>
+          </ol>
+          <p class="setup-note"><i class="ti ti-info-circle"></i> Texts cost about <strong>$0.08 AUD each</strong> and are sent from your own Twilio number, so replies come back to you.</p>
+        </div>
+      </details>
     </div>
   </div>
 </div>
@@ -529,12 +535,18 @@
         <button class="btn btn-secondary" onclick="testAI()"><i class="ti ti-wand"></i> Test Connection</button>
       </div>
       <div id="ai-test-result" class="mt-1"></div>
-      <div class="ai-help-steps">
-        <strong>How to get a free key:</strong><br>
-        1. Go to <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a><br>
-        2. Sign up free (no credit card needed)<br>
-        3. Create an API key and paste it above
-      </div>
+      <details class="setup-guide">
+        <summary><i class="ti ti-help-circle"></i> How to set up AI (step by step)</summary>
+        <div class="setup-guide-body">
+          <ol class="setup-steps">
+            <li>Go to <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a> and sign up. It's <strong>free</strong> and needs <strong>no credit card</strong>.</li>
+            <li>In the GroqCloud console, create an <strong>API key</strong> (it starts with <code>gsk_</code>).</li>
+            <li>Paste the key into the <strong>GroqCloud API Key</strong> field above and click <strong>Save</strong>.</li>
+            <li>Click <strong>Test Connection</strong> to confirm it works.</li>
+          </ol>
+          <p class="setup-note"><i class="ti ti-info-circle"></i> The AI writes plain-English summaries of your week and earnings, drafts SMS messages for you, and sums up each student's progress. <strong>Everything in Ivan works perfectly without it</strong> — it's just a helpful bonus.</p>
+        </div>
+      </details>
     </div>
   </div>
 </div>
@@ -1046,7 +1058,7 @@ async function saveHelpPrefs() {
   } catch (e) { Coach.toast(e.message, 'error'); }
 }
 
-const TOUR_ORDER = ['basics', 'add_student', 'book_lesson', 'send_sms', 'twilio_setup', 'earnings_tax'];
+const TOUR_ORDER = ['basics', 'add_student', 'book_lesson', 'money_owed', 'leads', 'send_sms', 'settings', 'twilio_setup', 'earnings_tax'];
 async function renderTourList() {
   const wrap = document.getElementById('tour-list');
   if (!wrap || typeof TOURS === 'undefined') return;

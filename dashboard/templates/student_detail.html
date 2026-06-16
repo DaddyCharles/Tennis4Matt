@@ -254,7 +254,7 @@ async function genSummary() {
   try {
     const res = await Coach.postJSON('/api/ai/student-summary', { student_id: STUDENT_ID });
     if (res.summary) { box.classList.remove('text-muted'); box.textContent = res.summary; }
-    else { box.textContent = 'AI not configured. Add an Anthropic API key in Settings.'; }
+    else { box.textContent = 'AI not configured. Add a GroqCloud API key in Settings.'; }
   } catch (e) { box.textContent = e.message; }
   btn.disabled = false;
 }

@@ -32,9 +32,18 @@ const Earnings = (() => {
     if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; }
   }
 
+  const money = (n) => '$' + Number(n || 0).toFixed(2);
+  const sum = (arr) => (arr || []).reduce((s, v) => s + Number(v || 0), 0);
+  const avg = (arr) => (arr && arr.length) ? sum(arr) / arr.length : 0;
+
+  function setTotals(id, html) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+  }
+
   async function barChart(canvasId, url, label, colour) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || typeof Chart === 'undefined') return;
+    if (!canvas || typeof Chart === 'undefined') return null;
     const d = await Coach.getJSON(url);
     destroy(canvasId);
     _charts[canvasId] = new Chart(canvas, {
@@ -51,11 +60,12 @@ const Earnings = (() => {
       },
       options: chartDefaults,
     });
+    return d;
   }
 
   async function lineChart(canvasId, url, label, colour) {
     const canvas = document.getElementById(canvasId);
-    if (!canvas || typeof Chart === 'undefined') return;
+    if (!canvas || typeof Chart === 'undefined') return null;
     const d = await Coach.getJSON(url);
     destroy(canvasId);
     _charts[canvasId] = new Chart(canvas, {
@@ -74,12 +84,31 @@ const Earnings = (() => {
       },
       options: chartDefaults,
     });
+    return d;
   }
 
   async function renderCharts() {
-    try { await barChart('chart-weekly', '/api/earnings/chart/weekly', 'Weekly $', TEAL); } catch (e) {}
-    try { await barChart('chart-monthly', '/api/earnings/chart/monthly', 'Monthly $', BLUE); } catch (e) {}
-    try { await lineChart('chart-daily', '/api/earnings/chart/daily', 'Daily $', TEAL); } catch (e) {}
+    try {
+      const d = await barChart('chart-weekly', '/api/earnings/chart/weekly', 'Weekly $', TEAL);
+      if (d) setTotals('totals-weekly',
+        `<span>Total <strong>${money(sum(d.data))}</strong></span><span>Avg/week <strong>${money(avg(d.data))}</strong></span>`);
+    } catch (e) {}
+    try {
+      const d = await barChart('chart-monthly', '/api/earnings/chart/monthly', 'Monthly $', BLUE);
+      if (d) {
+        const best = Math.max(0, ...(d.data || [0]));
+        setTotals('totals-monthly',
+          `<span>Best month <strong>${money(best)}</strong></span><span>Avg/month <strong>${money(avg(d.data))}</strong></span>`);
+      }
+    } catch (e) {}
+    try {
+      const d = await lineChart('chart-daily', '/api/earnings/chart/daily', 'Daily $', TEAL);
+      if (d) {
+        const active = (d.data || []).filter(v => Number(v) > 0);
+        setTotals('totals-daily',
+          `<span>This month <strong>${money(sum(d.data))}</strong></span><span>Avg/active day <strong>${money(avg(active))}</strong></span>`);
+      }
+    } catch (e) {}
   }
 
   return { renderCharts };

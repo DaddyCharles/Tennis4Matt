@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% block title %}Money Owed{% endblock %}
+{% block content %}
+
+<div class="page-header">
+  <div class="topbar-titles">
+    <h1 class="page-title">Money Owed</h1>
+    <div class="page-subtitle">Who owes you right now</div>
+  </div>
+</div>
+
+{% if owed %}
+<div class="card owed-summary">
+  <div class="owed-summary-label">OUTSTANDING BALANCE</div>
+  <div class="owed-summary-total">{{ total | currency }}</div>
+  <div class="owed-summary-sub">across {{ owed|length }} student{{ '' if owed|length == 1 else 's' }}</div>
+</div>
+
+<div id="owed-list" class="owed-list">
+  {% for s in owed %}
+  {% set overdue_class = 'red' if s.days_outstanding >= 15 else ('amber' if s.days_outstanding >= 8 else 'grey') %}
+  <div class="card owed-card" id="owed-card-{{ s.student_id }}" data-student="{{ s.student_id }}">
+    <div class="owed-card-head">
+      <div class="owed-card-name">{{ s.student_name }}</div>
+      {% if s.student_phone %}
+      <a class="owed-card-phone" href="tel:{{ s.student_phone }}"><i class="ti ti-phone"></i> {{ s.student_phone }}</a>
+      {% endif %}
+    </div>
+    <div class="owed-card-summary">
+      {{ s.lessons_unpaid }} unpaid lesson{{ '' if s.lessons_unpaid == 1 else 's' }}
+      · since {{ s.oldest_unpaid_date | dateshort }}
+      · <span class="owed-days owed-days-{{ overdue_class }}">{{ s.days_outstanding }} day{{ '' if s.days_outstanding == 1 else 's' }} overdue</span>
+    </div>
+    <div class="owed-lessons">
+      {% for l in s.lessons %}
+      <div class="owed-lesson">
+        <span class="owed-lesson-date">{{ l.date | dateshort }}</span>
+        <span class="owed-lesson-dur">{{ l.duration_minutes }} min</span>
+        <span class="owed-lesson-price">{{ l.price | currency }}</span>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="owed-card-foot">
+      <div class="owed-card-total">TOTAL OWED: <strong class="teal">{{ s.amount_owed | currency }}</strong></div>
+      <div class="owed-card-actions">
+        <button class="btn btn-primary btn-small" onclick="markAllPaid('{{ s.student_id }}')"><i class="ti ti-check"></i> Mark All Paid</button>
+        {% if settings.modules and settings.modules.sms %}
+        <a class="btn btn-secondary btn-small" href="/sms?template=payment&tab=contacts{% if s.student_phone %}&phone={{ s.student_phone | urlencode }}{% endif %}"><i class="ti ti-message"></i> SMS</a>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="card owed-empty" id="owed-empty">
+  <div class="owed-empty-icon"><i class="ti ti-circle-check"></i></div>
+  <div class="owed-empty-title">You're all caught up!</div>
+  <div class="owed-empty-desc">No outstanding payments.</div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='coach.js') }}"></script>
+<script>
+async function markAllPaid(studentId) {
+  if (!await Coach.confirm({ title: 'Mark all paid?', message: 'Mark every unpaid lesson for this student as paid.', confirmText: 'Mark paid', cancelText: 'Cancel' })) return;
+  try {
+    await Coach.postJSON(`/api/money-owed/mark-paid/${studentId}`);
+    const card = document.getElementById(`owed-card-${studentId}`);
+    if (card) {
+      card.classList.add('owed-card-removing');
+      setTimeout(() => {
+        card.remove();
+        if (!document.querySelectorAll('.owed-card').length) location.reload();
+      }, 350);
+    }
+    Coach.toast('Marked paid', 'success');
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+</script>
+{% endblock %}

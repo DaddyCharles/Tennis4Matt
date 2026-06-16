@@ -6,44 +6,113 @@
     </div>
     <div class="form-group">
       <label class="form-label">Student</label>
-      <select id="lesson-student" class="form-input"></select>
+      <select id="lesson-student" class="form-input" onchange="Coach.onStudentChange(this.value)"></select>
+      <div id="new-student-fields" class="new-student-fields" style="display:none;">
+        <div class="form-group">
+          <label class="form-label">New student name</label>
+          <input type="text" id="new-student-name" class="form-input" placeholder="Student name">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Phone (optional)</label>
+            <input type="tel" id="new-student-phone" class="form-input" placeholder="04XX XXX XXX">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Level</label>
+            <select id="new-student-level" class="form-input">
+              <option>Beginner</option><option>Intermediate</option><option>Advanced</option>
+            </select>
+          </div>
+        </div>
+        <div class="hint">This student will be saved to your roster.</div>
+      </div>
     </div>
     <div class="form-row">
       <div class="form-group">
         <label class="form-label">Date</label>
-        <input type="date" id="lesson-date" class="form-input">
+        <div class="date-picker" data-name="lesson-date">
+          <button type="button" class="dp-display" onclick="openDatePicker(this)"><i class="ti ti-calendar"></i> <span class="dp-value">—</span></button>
+          <div class="dp-dropdown">
+            <div class="dp-header">
+              <button type="button" class="dp-nav" onclick="dpMonth(this,-1)"><i class="ti ti-chevron-left"></i></button>
+              <span class="dp-monthyear"></span>
+              <button type="button" class="dp-nav" onclick="dpMonth(this,1)"><i class="ti ti-chevron-right"></i></button>
+            </div>
+            <div class="dp-weekdays"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+            <div class="dp-days"></div>
+            <div class="dp-footer"><button type="button" onclick="dpClear(this)">Clear</button><button type="button" onclick="dpToday(this)">Today</button></div>
+          </div>
+          <input type="hidden" class="dp-input" id="lesson-date" value="">
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">Start time</label>
-        <input type="time" id="lesson-time" class="form-input" step="1800" value="09:00">
+        <div class="time-picker" data-name="lesson-time">
+          <button type="button" class="tp-display" onclick="openTimePicker(this)"><i class="ti ti-clock"></i> <span class="tp-value">9:00 AM</span></button>
+          <div class="tp-dropdown">
+            <div class="tp-col" data-col="hour"></div>
+            <div class="tp-col" data-col="minute"></div>
+            <div class="tp-col" data-col="period"></div>
+          </div>
+          <input type="hidden" class="tp-input" id="lesson-time" value="09:00">
+        </div>
       </div>
     </div>
     <div class="form-group">
       <label class="form-label">Duration</label>
-      <div id="block-selector" class="block-selector"></div>
-      <div id="block-total" class="block-total">1 hour</div>
+      <div class="duration-picker">
+        <div class="dur-quick" id="dur-quick">
+          <button type="button" class="dur-pill" data-mins="30">30 min</button>
+          <button type="button" class="dur-pill" data-mins="45">45 min</button>
+          <button type="button" class="dur-pill active" data-mins="60">60 min</button>
+          <button type="button" class="dur-pill" data-mins="90">90 min</button>
+          <button type="button" class="dur-pill" data-mins="120">2 hours</button>
+        </div>
+        <div class="dur-custom">
+          <span class="dur-custom-label">Custom</span>
+          <div class="number-stepper">
+            <button type="button" class="stepper-btn minus" onclick="Coach.stepDuration(-15)">−</button>
+            <span class="dur-custom-display" id="dur-display">1 hour</span>
+            <button type="button" class="stepper-btn plus" onclick="Coach.stepDuration(15)">+</button>
+          </div>
+        </div>
+        <input type="hidden" id="lesson-duration" value="60">
+      </div>
     </div>
     <div class="form-group">
       <label class="form-label">Price ($)</label>
+      <div class="price-presets" id="price-presets"></div>
       <input type="number" id="lesson-price" class="form-input" min="0" step="5" value="80">
     </div>
-    <div class="form-group checkbox-row">
-      <input type="checkbox" id="lesson-recurring" onchange="Coach.toggleRecurring()">
-      <label class="form-label" for="lesson-recurring" style="margin:0;">Repeat weekly</label>
-    </div>
+    <label class="toggle-row">
+      <span class="toggle-label">Repeat weekly</span>
+      <span class="toggle-switch"><input type="checkbox" id="lesson-recurring" onchange="Coach.toggleRecurring()"><span class="toggle-slider"></span></span>
+    </label>
     <div id="recurring-options" style="display:none;">
-      <div class="form-group">
-        <label class="form-label">Repeat until (optional)</label>
-        <input type="date" id="recurring-end" class="form-input">
+      <div class="repeat-echo">Repeats every <strong id="repeat-day">Tuesday</strong> at
+        <strong id="repeat-time">9:00 AM</strong>, <strong id="repeat-dur">1 hour</strong></div>
+      <label class="form-label">How many weeks?</label>
+      <div class="recur-weeks-quick">
+        <button type="button" class="rw-chip" onclick="Coach.setWeeks(4)">4</button>
+        <button type="button" class="rw-chip" onclick="Coach.setWeeks(8)">8</button>
+        <button type="button" class="rw-chip active" onclick="Coach.setWeeks(10)">10</button>
+        <button type="button" class="rw-chip" onclick="Coach.setWeeks(12)">12</button>
+        <button type="button" class="rw-chip" onclick="Coach.setWeeks(0)">Ongoing</button>
       </div>
-      <p class="note">This creates a lesson every week at the same time.</p>
+      <div class="recur-weeks-stepper">
+        <button type="button" class="rw-btn" onclick="Coach.stepWeeks(-1)">−</button>
+        <span id="recur-weeks-label">10 weeks</span>
+        <button type="button" class="rw-btn" onclick="Coach.stepWeeks(1)">+</button>
+      </div>
+      <div class="recur-confirm" id="recur-confirm"></div>
+      <input type="hidden" id="recur-weeks" value="10">
     </div>
     <div class="form-group">
       <label class="form-label">Notes</label>
       <textarea id="lesson-notes" class="form-input" rows="2"></textarea>
     </div>
     <div class="btn-group">
-      <button class="btn btn-primary" onclick="Coach.saveLesson()">Save Lesson</button>
+      <button class="btn btn-primary" onclick="Coach.saveLesson(event)">Save Lesson</button>
       <button class="btn btn-secondary" onclick="Coach.closeModal('lesson-modal')">Cancel</button>
     </div>
   </div>
@@ -104,7 +173,7 @@
       <textarea id="student-notes" class="form-input" rows="2"></textarea>
     </div>
     <div class="btn-group">
-      <button class="btn btn-primary" onclick="Coach.saveStudent()">Save Student</button>
+      <button class="btn btn-primary" onclick="Coach.saveStudent(event)">Save Student</button>
       <button class="btn btn-secondary" onclick="Coach.closeModal('student-modal')">Cancel</button>
     </div>
   </div>

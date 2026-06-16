@@ -20,17 +20,19 @@ from main import run_flask, run_weather_loop, PORT
 
 DASHBOARD_URL = f"http://127.0.0.1:{PORT}"
 _BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOGO_PATH = os.path.join(_BASE_DIR, "dashboard", "static", "ivan-logo.png")
+_STATIC_DIR = os.path.join(_BASE_DIR, "dashboard", "static")
+WIN_ICON_PATH = os.path.join(_STATIC_DIR, "icons", "ivan.ico")
+LOGO_PATH = os.path.join(_STATIC_DIR, "ivan-logo.png")
 
 
 def make_icon_image() -> Image.Image:
-    """Use the Ivan logo for the tray icon, or fall back to a green circle."""
-    try:
-        if os.path.exists(LOGO_PATH):
-            img = Image.open(LOGO_PATH).convert("RGBA")
-            return img.resize((64, 64), Image.LANCZOS)
-    except Exception:
-        pass
+    """Use the generated Windows icon (or the logo) for the tray, else a green circle."""
+    for path in (WIN_ICON_PATH, LOGO_PATH):
+        try:
+            if os.path.exists(path):
+                return Image.open(path).convert("RGBA").resize((64, 64), Image.LANCZOS)
+        except Exception:
+            pass
     size = 64
     image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(image)

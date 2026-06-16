@@ -13,6 +13,11 @@
   </span>
   <button id="btn-start" class="btn-start btn-ripple" onclick="startBot(event)" {% if bot_running %}hidden{% endif %}><i class="ti ti-player-play"></i> Start Bot</button>
   <button id="btn-stop" class="btn-stop btn-ripple" onclick="stopBot(event)" {% if not bot_running %}hidden{% endif %}><i class="ti ti-player-stop"></i> Stop Bot</button>
+  <button class="btn-help" id="btn-help" onclick="openHelp()"
+          {% if settings and settings.help and not settings.help.get('show_help_button', True) %}hidden{% endif %}
+          aria-label="Help">
+    <i class="ti ti-help"></i><span class="btn-help-label">Help</span>
+  </button>
 </div>
 {% endblock %}
 

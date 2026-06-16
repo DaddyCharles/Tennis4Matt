@@ -28,8 +28,6 @@ ACTIVITY_LOG_PATH = os.path.join(LOGS_DIR, 'activity.log')
 
 # Default settings — merged under whatever is on disk so missing keys never crash.
 DEFAULT_SETTINGS = {
-    "user_title": "Mr",
-    "user_name": "Scheers",
     "scan_interval_minutes": 15,
     "active_hours_start": "07:00",
     "active_hours_end": "21:00",
@@ -46,19 +44,21 @@ DEFAULT_SETTINGS = {
     # --- Coach Pro settings ----------------------------------------------
     "coach_name": "Matt",
     "coach_title": "Mr",
-    "location": "Sydney, Australia",
-    "latitude": -33.8688,
-    "longitude": 151.2093,
+    "location": "Panania, NSW, Australia",
+    "latitude": -33.9522,
+    "longitude": 151.0286,
     "currency": "AUD",
     "default_lesson_price": 80,
-    "lesson_prices": {
-        "30min": 45,
-        "60min": 80,
-        "90min": 110,
-        "120min": 140,
+    "pricing": {
+        "duration_prices": {"30": 45, "45": 65, "60": 80, "90": 110, "120": 140},
+        "presets": [
+            {"name": "Standard", "amount": 80},
+            {"name": "Junior", "amount": 60},
+            {"name": "Group", "amount": 40},
+        ],
     },
-    "court_name": "Riddles Creek Tennis Club",
-    "court_address": "Sydney, NSW",
+    "court_name": "",
+    "court_address": "",
     "lights_warning_minutes": 45,
     "anthropic_api_key": "",
     "push_notifications_enabled": False,
@@ -95,8 +95,26 @@ DEFAULT_SETTINGS = {
         "quarterly_payg_rate": None,
     },
     "availability": {
-        "monday": [], "tuesday": [], "wednesday": [], "thursday": [],
-        "friday": [], "saturday": [], "sunday": [],
+        "monday": {"open": True, "start": "07:00", "end": "19:00"},
+        "tuesday": {"open": True, "start": "07:00", "end": "19:00"},
+        "wednesday": {"open": True, "start": "07:00", "end": "19:00"},
+        "thursday": {"open": True, "start": "07:00", "end": "19:00"},
+        "friday": {"open": True, "start": "07:00", "end": "19:00"},
+        "saturday": {"open": True, "start": "08:00", "end": "16:00"},
+        "sunday": {"open": False, "start": "08:00", "end": "16:00"},
+        "custom_presets": {},
+    },
+    "help": {
+        "show_help_button": True,
+        "show_feature_tips": True,
+        "completed_tours": [],
+        "dismissed_tips": [],
+    },
+    "ai": {
+        "provider": "groq",
+        "groq_api_key": "",
+        "model": "llama-3.3-70b-versatile",
+        "enabled": False,
     },
 }
 

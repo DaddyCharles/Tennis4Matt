@@ -56,7 +56,7 @@
       <span class="note">Use {name} for first name, {time} for lesson time, {date}, {amount}.</span>
       <span class="sms-charcount" id="sms-charcount">0 chars</span>
     </div>
-    <label class="biz-check"><input type="checkbox" id="sms-personalise" checked onchange="renderPreview()"> Send personalised (replace {name} with each person's name)</label>
+    <label class="biz-check"><span class="toggle-switch"><input type="checkbox" id="sms-personalise" checked onchange="renderPreview()"><span class="toggle-slider"></span></span> Send personalised (replace {name} with each person's name)</label>
 
     <div class="sms-preview" id="sms-preview" hidden></div>
 
@@ -218,7 +218,7 @@ function renderContacts() {
     const checked = selectedContactIds.has(c.id) ? 'checked' : '';
     const tags = (c.tags || []).filter(Boolean).map(t => `<span class="sms-tag">${esc(t)}</span>`).join('');
     return `<label class="sms-contact-row">
-      <input type="checkbox" ${checked} onchange="toggleContact('${c.id}', this.checked)">
+      <span class="toggle-switch"><input type="checkbox" ${checked} onchange="toggleContact('${c.id}', this.checked)"><span class="toggle-slider"></span></span>
       <span class="sms-contact-main">
         <strong>${esc(c.name)}</strong>
         <span class="note">${esc(c.phone)}</span>
@@ -362,7 +362,7 @@ function openGroupModal(id) {
   document.getElementById('group-colour').value = g ? (g.colour || '#00c88a') : '#00c88a';
   const member = new Set((g && g.contact_ids) || []);
   document.getElementById('group-members').innerHTML = CONTACTS.length
-    ? CONTACTS.map(c => `<label class="sms-member-row"><input type="checkbox" value="${c.id}" ${member.has(c.id) ? 'checked' : ''}> ${esc(c.name)}</label>`).join('')
+    ? CONTACTS.map(c => `<label class="sms-member-row"><span class="toggle-switch"><input type="checkbox" value="${c.id}" ${member.has(c.id) ? 'checked' : ''}><span class="toggle-slider"></span></span> ${esc(c.name)}</label>`).join('')
     : '<span class="note">No contacts yet. Add contacts first.</span>';
   document.getElementById('group-modal').classList.add('open');
 }
@@ -385,7 +385,7 @@ async function saveGroup() {
   } catch (e) { Coach.toast(e.message, 'error'); }
 }
 async function deleteGroup(id) {
-  if (!confirm('Delete this group?')) return;
+  if (!await Coach.confirm({ title: 'Delete group?', message: 'This group will be permanently removed.', confirmText: 'Delete' })) return;
   try { await Coach.del(`/api/sms/groups/${id}`); if (selectedGroupId === id) selectedGroupId = null; await refreshData(); }
   catch (e) { Coach.toast(e.message, 'error'); }
 }
@@ -398,12 +398,19 @@ function openContactModal(id) {
   document.getElementById('contact-name').value = c ? c.name : '';
   document.getElementById('contact-phone').value = c ? c.phone : '';
   document.getElementById('contact-tags').value = c ? (c.tags || []).join(', ') : '';
+  Coach.attachPhoneValidation('contact-phone');
   document.getElementById('contact-modal').classList.add('open');
 }
 async function saveContact() {
   const name = document.getElementById('contact-name').value.trim();
-  const phone = document.getElementById('contact-phone').value.trim();
+  const phoneEl = document.getElementById('contact-phone');
+  const phone = phoneEl.value.trim();
   if (!name || !phone) { Coach.toast('Name and phone required', 'error'); return; }
+  if (!Coach.validateAusPhone(phone)) {
+    Coach.toast('Enter a valid Australian mobile number', 'error');
+    phoneEl.classList.add('input-error');
+    return;
+  }
   const tags = document.getElementById('contact-tags').value.split(',').map(s => s.trim()).filter(Boolean);
   try {
     if (editingContactId) await Coach.postJSON(`/api/sms/contacts/${editingContactId}/edit`, { name, phone, tags });
@@ -414,7 +421,7 @@ async function saveContact() {
   } catch (e) { Coach.toast(e.message, 'error'); }
 }
 async function deleteContact(id) {
-  if (!confirm('Delete this contact?')) return;
+  if (!await Coach.confirm({ title: 'Delete contact?', message: 'This contact will be permanently removed.', confirmText: 'Delete' })) return;
   try { await Coach.del(`/api/sms/contacts/${id}`); selectedContactIds.delete(id); await refreshData(); }
   catch (e) { Coach.toast(e.message, 'error'); }
 }
@@ -427,10 +434,19 @@ async function importStudents() {
 }
 
 /* ---- Test ------------------------------------------------------------ */
-function openTestSms() { document.getElementById('test-modal').classList.add('open'); }
+function openTestSms() {
+  Coach.attachPhoneValidation('test-number');
+  document.getElementById('test-modal').classList.add('open');
+}
 async function sendTest() {
-  const to = document.getElementById('test-number').value.trim();
+  const toEl = document.getElementById('test-number');
+  const to = toEl.value.trim();
   if (!to) { Coach.toast('Enter a number', 'error'); return; }
+  if (!Coach.validateAusPhone(to)) {
+    Coach.toast('Enter a valid Australian mobile number', 'error');
+    toEl.classList.add('input-error');
+    return;
+  }
   try {
     await Coach.postJSON('/api/sms/test', { to });
     Coach.closeModal('test-modal');
@@ -475,12 +491,22 @@ renderTemplates();
 updateRecipients();
 loadHistory();
 
-// quick-send deep link: /sms?template=rain_cancel
+// quick-send deep link: /sms?template=rain_cancel&phone=...
 (function () {
   const params = new URLSearchParams(location.search);
   const tpl = params.get('template');
   if (tpl) loadTemplate(tpl);
   if (params.get('tab') === 'contacts') switchTab('contacts');
+  const phone = params.get('phone');
+  if (phone) {
+    const digits = phone.replace(/\D/g, '').slice(-9);
+    const match = CONTACTS.find(c => (c.phone || '').replace(/\D/g, '').endsWith(digits));
+    if (match) {
+      switchTab('contacts');
+      toggleContact(match.id, true);
+      renderContacts();
+    }
+  }
 })();
 </script>
 {% endblock %}

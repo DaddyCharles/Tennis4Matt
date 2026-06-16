@@ -40,3 +40,10 @@ config/settings.json
 # files above are ignored.
 !data/defaults/
 !config/defaults/
+
+# ── App icons (bundled so fresh installs can regenerate) ──
+# Source logos and the generated icon set must stay tracked.
+!dashboard/static/ivan-logo.png
+!dashboard/static/ivan-logo-ios.png
+!dashboard/static/ivan-logo-windows.png
+!dashboard/static/icons/

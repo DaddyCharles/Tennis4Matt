@@ -299,6 +299,12 @@ def process_post(post: dict) -> dict | None:
         if not match:
             return None
 
+        try:
+            from app.leads import score_lead
+            scored = score_lead(post.get('post_text', ''), post.get('group_location', ''))
+        except Exception:
+            scored = {"score": 1, "reasons": [], "intent": "low"}
+
         lead = {
             "post_id": post_id,
             "poster_name": post.get('poster_name', 'Unknown'),
@@ -311,6 +317,10 @@ def process_post(post: dict) -> dict | None:
             "category_label": match['category_label'],
             "matched_keyword": match['matched_keyword'],
             "status": "new",
+            "score": scored["score"],
+            "score_reasons": scored["reasons"],
+            "intent": scored["intent"],
+            "contacted_at": None,
             "reply_sent": False,
             "reply_text": "",
             "notes": "",

@@ -1,18 +1,24 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" style="background-color:#0b1018;">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Ivan{% endblock %} — Ivan</title>
-  <meta name="theme-color" content="#00a8ff">
+  <meta name="theme-color" content="#0b1018">
   <link rel="manifest" href="{{ url_for('pwa_manifest') }}">
   <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
-  <link rel="apple-touch-icon" href="/static/icon-192.png">
+  <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="120x120" href="/static/icons/apple-touch-icon-120.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="/static/icons/apple-touch-icon-152.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="/static/icons/apple-touch-icon-167.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/icons/apple-touch-icon-180.png">
+  <meta name="msapplication-TileColor" content="#0a1628">
+  <meta name="msapplication-TileImage" content="/static/icons/mstile-150x150.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
 </head>
-<body class="{% block body_class %}{% endblock %}">
+<body class="{% block body_class %}{% endblock %}"{% if mood %} data-mood="{{ mood }}"{% endif %}>
   <div id="ivan-splash" class="ivan-splash">
     <div class="ivan-splash-bg"></div>
     <div class="ivan-splash-content">
@@ -48,6 +54,10 @@
         </a>
         <a href="{{ url_for('earnings_page') }}" class="nav-link nav-coaching {{ 'active' if request.path.startswith('/earnings') else '' }}">
           <span class="nav-icon"><i class="ti ti-chart-bar"></i></span><span>Earnings</span>
+        </a>
+        <a href="{{ url_for('money_owed_page') }}" class="nav-link nav-coaching {{ 'active' if request.path.startswith('/money-owed') else '' }}">
+          <span class="nav-icon"><i class="ti ti-cash"></i></span><span>Money Owed</span>
+          {% if total_owed and total_owed > 0 %}<span class="nav-badge-amber">{{ owed_count }}</span>{% endif %}
         </a>
 
         {% set m = settings.modules if settings and settings.modules else {} %}
@@ -126,7 +136,14 @@
         <div class="topbar-titles">
           <h2>Ivan</h2>
         </div>
-        <span id="status-badge" class="status-badge stopped">STOPPED</span>
+        <div class="topbar-right">
+          <span id="status-badge" class="status-badge stopped">STOPPED</span>
+          <button class="btn-help" id="btn-help" onclick="openHelp()"
+                  {% if settings and settings.help and not settings.help.get('show_help_button', True) %}hidden{% endif %}
+                  aria-label="Help">
+            <i class="ti ti-help"></i><span class="btn-help-label">Help</span>
+          </button>
+        </div>
         {% endblock %}
       </header>
       <main class="content">
@@ -134,6 +151,72 @@
       </main>
     </div>
   </div>
+
+  <div class="help-overlay" id="help-overlay" onclick="closeHelp()"></div>
+  <aside class="help-drawer" id="help-drawer" aria-hidden="true">
+    <div class="help-drawer-head">
+      <h2 id="help-drawer-title">Help</h2>
+      <button class="help-drawer-x" onclick="closeHelp()" aria-label="Close help">&times;</button>
+    </div>
+    <p class="help-drawer-body" id="help-drawer-body"></p>
+    <div class="help-quick-actions" id="help-quick-actions"></div>
+    <button class="btn btn-primary help-tour-btn" id="help-tour-btn" onclick="startPageTour()">
+      <i class="ti ti-route"></i> Take a Tour
+    </button>
+  </aside>
+
+  <nav class="mobile-tab-bar">
+    <a href="{{ url_for('coach_index') }}" class="tab-item {{ 'active' if request.path == '/coach' else '' }}">
+      <i class="ti ti-home"></i>
+      <span>Home</span>
+    </a>
+    <a href="{{ url_for('calendar_page') }}" class="tab-item {{ 'active' if request.path.startswith('/calendar') else '' }}">
+      <i class="ti ti-calendar"></i>
+      <span>Calendar</span>
+    </a>
+    <a href="{{ url_for('students_page') }}" class="tab-item {{ 'active' if request.path.startswith('/students') else '' }}">
+      <i class="ti ti-users"></i>
+      <span>Students</span>
+    </a>
+    <a href="{{ url_for('earnings_page') }}" class="tab-item {{ 'active' if request.path.startswith('/earnings') else '' }}">
+      <i class="ti ti-chart-bar"></i>
+      <span>Earnings</span>
+    </a>
+    <a href="#more" class="tab-item" onclick="toggleMoreSheet(event)">
+      <i class="ti ti-dots"></i>
+      <span>More</span>
+    </a>
+  </nav>
+
+  <div id="more-sheet" class="more-sheet">
+    <div class="more-sheet-handle"></div>
+    <div class="more-sheet-content">
+      <a href="{{ url_for('invoices_page') }}" class="more-item"><i class="ti ti-file-invoice"></i> Invoices</a>
+      <a href="{{ url_for('expenses_page') }}" class="more-item"><i class="ti ti-receipt"></i> Expenses</a>
+      <a href="{{ url_for('tax_page') }}" class="more-item"><i class="ti ti-calculator"></i> Tax Estimator</a>
+      <a href="{{ url_for('packages_page') }}" class="more-item"><i class="ti ti-package"></i> Packages</a>
+      <a href="{{ url_for('money_owed_page') }}" class="more-item"><i class="ti ti-cash"></i> Money Owed</a>
+      <a href="{{ url_for('sms_page') }}" class="more-item"><i class="ti ti-message-2"></i> SMS</a>
+      <a href="{{ url_for('dashboard_page') }}" class="more-item"><i class="ti ti-brand-facebook"></i> Lead Monitor</a>
+      <a href="{{ url_for('settings_page') }}" class="more-item"><i class="ti ti-settings"></i> Settings</a>
+    </div>
+  </div>
+
+  <script>
+    function toggleMoreSheet(e) {
+      if (e) { e.preventDefault(); e.stopPropagation(); }
+      const sheet = document.getElementById('more-sheet');
+      if (!sheet) return;
+      sheet.style.display = 'block';
+      requestAnimationFrame(() => sheet.classList.toggle('open'));
+    }
+    document.addEventListener('click', function (e) {
+      const sheet = document.getElementById('more-sheet');
+      if (sheet && sheet.classList.contains('open') && !sheet.contains(e.target)) {
+        sheet.classList.remove('open');
+      }
+    });
+  </script>
 
   <script>
     (function () {
@@ -148,6 +231,10 @@
         sessionStorage.setItem('ivan_loaded', '1');
       }, 1600);
     })();
+  </script>
+  <script>
+    window.DURATION_PRICES = {{ (settings.pricing.duration_prices if settings.pricing else {'30':45,'45':65,'60':80,'90':110,'120':140}) | tojson }};
+    window.PRICE_PRESETS = {{ (settings.pricing.presets if settings.pricing else []) | tojson }};
   </script>
   <script src="{{ url_for('static', filename='app.js') }}"></script>
   <script>

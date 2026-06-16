@@ -1,109 +1,158 @@
 {% extends "base.html" %}
-{% block title %}Leads{% endblock %}
+{% block title %}Lead Monitor{% endblock %}
 {% block content %}
 
+{% macro pipe_status(s) -%}
+{%- if s in ['booked','won'] -%}booked
+{%- elif s in ['contacted','replied'] -%}contacted
+{%- elif s in ['dismissed','ignored','lost'] -%}dismissed
+{%- else -%}new{%- endif -%}
+{%- endmacro %}
+
 <div class="page-header">
-  <h1>Leads</h1>
-  <a href="{{ url_for('leads_export') }}" class="btn btn-secondary">Export CSV</a>
+  <div class="topbar-titles">
+    <h1 class="page-title">Lead Monitor</h1>
+    <div class="page-subtitle">Facebook leads, scored and ready to action</div>
+  </div>
+  <a href="{{ url_for('leads_export') }}" class="btn btn-secondary"><i class="ti ti-download"></i> Export CSV</a>
+</div>
+
+<!-- Stats header -->
+<div class="stat-grid biz-stat-grid">
+  <div class="stat-card"><div class="stat-label">New Today</div><div class="stat-value">{{ stats.new_today }}</div></div>
+  <div class="stat-card"><div class="stat-label">New This Week</div><div class="stat-value">{{ stats.new_week }}</div></div>
+  <div class="stat-card"><div class="stat-label">Booked This Month</div><div class="stat-value">{{ stats.booked_month }}</div></div>
+  <div class="stat-card"><div class="stat-label">Conversion</div><div class="stat-value">{{ stats.conversion_pct }}%</div></div>
+</div>
+
+<div class="biz-cols">
+  <div class="card">
+    <div class="lead-perf-row">
+      <div class="lead-perf">
+        <span class="lead-perf-lbl">Best group</span>
+        <strong>{{ stats.best_group or '—' }}</strong>
+      </div>
+      <div class="lead-perf">
+        <span class="lead-perf-lbl">Best keyword</span>
+        <strong>{{ stats.best_keyword or '—' }}</strong>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="pipeline-row">
+      <div class="pipe-chip pipe-new">{{ stats.counts.new }} new</div>
+      <div class="pipe-chip pipe-contacted">{{ stats.counts.contacted }} contacted</div>
+      <div class="pipe-chip pipe-booked">{{ stats.counts.booked }} booked</div>
+      <div class="pipe-chip pipe-dismissed">{{ stats.counts.dismissed }} dismissed</div>
+    </div>
+  </div>
 </div>
 
 <div class="card">
   <div class="filter-bar">
     <div class="form-group">
       <label class="form-label">Status</label>
-      <select id="filter-status" class="form-select" onchange="filterLeads()">
+      <select id="filter-status" class="form-select" onchange="filterLeadCards()">
         <option value="">All</option>
         <option value="new">New</option>
-        <option value="replied">Replied</option>
-        <option value="ignored">Ignored</option>
-        <option value="won">Won</option>
-        <option value="lost">Lost</option>
+        <option value="contacted">Contacted</option>
+        <option value="booked">Booked</option>
+        <option value="dismissed">Not interested</option>
       </select>
     </div>
     <div class="form-group">
       <label class="form-label">Group</label>
-      <select id="filter-group" class="form-select" onchange="filterLeads()">
+      <select id="filter-group" class="form-select" onchange="filterLeadCards()">
         <option value="">All</option>
         {% for group in groups %}
         <option value="{{ group.name }}">{{ group.name }}</option>
         {% endfor %}
       </select>
     </div>
-    <div class="form-group">
-      <label class="form-label">From</label>
-      <input type="date" id="filter-from" class="form-input" onchange="filterLeads()">
-    </div>
-    <div class="form-group">
-      <label class="form-label">To</label>
-      <input type="date" id="filter-to" class="form-input" onchange="filterLeads()">
-    </div>
     <div class="form-group" style="flex:1;min-width:200px;">
       <label class="form-label">Search</label>
-      <input type="text" id="filter-search" class="form-input" placeholder="Search posts..." oninput="filterLeads()">
+      <input type="text" id="filter-search" class="form-input" placeholder="Search posts..." oninput="filterLeadCards()">
     </div>
   </div>
+</div>
 
-  {% if leads %}
-  <div class="table-container">
-    <table class="table" id="leads-table">
-      <thead>
-        <tr>
-          <th>Time</th><th>Poster</th><th>Post Preview</th><th>Group</th>
-          <th>Category</th><th>Keyword</th><th>Status</th><th>Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for lead in leads %}
-        <tr data-status="{{ lead.status }}" data-group="{{ lead.group_name }}" data-date="{{ lead.created_at[:10] }}">
-          <td>{{ lead.created_at | timeago }}</td>
-          <td>{{ lead.poster_name }}</td>
-          <td class="post-preview">{{ lead.post_text[:120] }}{% if lead.post_text|length > 120 %}…{% endif %}</td>
-          <td>{{ lead.group_name }}</td>
-          <td>{{ lead.category_label }}</td>
-          <td>{{ lead.matched_keyword }}</td>
-          <td><span class="badge badge-{{ lead.status }}">{{ lead.status | upper }}</span></td>
-          <td>
-            <div class="btn-group">
-              <button class="btn btn-small btn-primary" onclick="openReplyModal('{{ lead.id }}', '{{ lead.post_url }}')">Reply</button>
-              <button class="btn btn-small btn-secondary" data-name="{{ lead.poster_name }}" onclick="addAsStudent(this)">Add as Student</button>
-              <button class="btn btn-small btn-secondary" onclick="setLeadStatus('{{ lead.id }}','won')">Won</button>
-              <button class="btn btn-small btn-secondary" onclick="setLeadStatus('{{ lead.id }}','lost')">Lost</button>
-              <button class="btn btn-small btn-secondary" onclick="setLeadStatus('{{ lead.id }}','ignored')">Ignore</button>
-              <button class="btn btn-small btn-danger" onclick="deleteLead('{{ lead.id }}')">Delete</button>
-            </div>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
+{% if leads %}
+<div class="lead-cards" id="lead-cards">
+  {% for lead in leads %}
+  {% set ps = pipe_status(lead.status) %}
+  <div class="lead-card intent-{{ lead.intent or 'low' }}" id="lead-{{ lead.id }}"
+       data-status="{{ ps }}" data-group="{{ lead.group_name }}"
+       data-text="{{ (lead.post_text or '')|lower }} {{ (lead.poster_name or '')|lower }}">
+    <div class="lead-card-top">
+      <div class="lead-stars" title="Lead score: {{ lead.score or 1 }}/5">
+        {% for i in range(1, 6) %}<i class="ti {{ 'ti-star-filled' if i <= (lead.score or 1) else 'ti-star' }}"></i>{% endfor %}
+        <span class="lead-intent lead-intent-{{ lead.intent or 'low' }}">{{ (lead.intent or 'low')|upper }} INTENT</span>
+      </div>
+      <div class="lead-card-meta">
+        <span class="lead-time">{{ lead.created_at | timeago }}</span>
+        <span class="lead-status-chip chip-{{ ps }}">{{ ps|capitalize }}</span>
+      </div>
+    </div>
 
-  <div class="pagination">
-    <button id="page-prev" class="btn btn-small btn-secondary" onclick="paginateLeads(currentPage - 1)">Prev</button>
-    <span id="page-info" class="text-muted"></span>
-    <button id="page-next" class="btn btn-small btn-secondary" onclick="paginateLeads(currentPage + 1)">Next</button>
+    <div class="lead-poster">{{ lead.poster_name }}</div>
+    <div class="lead-text">"{{ lead.post_text }}"</div>
+
+    {% if lead.score_reasons %}
+    <div class="lead-reasons">
+      {% for r in lead.score_reasons %}<span class="lead-reason">{{ r }}</span>{% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="lead-source">
+      <i class="ti ti-users-group"></i> {{ lead.group_name or 'Unknown group' }}
+      {% if lead.matched_keyword %}<span class="lead-kw">{{ lead.matched_keyword }}</span>{% endif %}
+    </div>
+
+    <div class="lead-actions">
+      {% if lead.post_url %}<a class="btn btn-small btn-secondary" href="{{ lead.post_url }}" target="_blank" rel="noopener"><i class="ti ti-brand-facebook"></i> Open in Facebook</a>{% endif %}
+      <button class="btn btn-small btn-secondary" onclick="suggestReply('{{ lead.id }}')"><i class="ti ti-sparkles"></i> Suggest Reply</button>
+      <button class="btn btn-small btn-primary" onclick="convertLead('{{ lead.id }}', '{{ lead.poster_name|e }}')"><i class="ti ti-user-plus"></i> Convert</button>
+      <button class="btn btn-small btn-ghost" onclick="toggleNote('{{ lead.id }}')"><i class="ti ti-note"></i> Note</button>
+    </div>
+
+    <div class="lead-mark">
+      <span class="lead-mark-lbl">Mark:</span>
+      <button class="lead-mark-btn {{ 'active' if ps == 'new' }}" data-s="new" onclick="markLead('{{ lead.id }}','new')">New</button>
+      <button class="lead-mark-btn {{ 'active' if ps == 'contacted' }}" data-s="contacted" onclick="markLead('{{ lead.id }}','contacted')">Contacted</button>
+      <button class="lead-mark-btn {{ 'active' if ps == 'booked' }}" data-s="booked" onclick="markLead('{{ lead.id }}','booked')">Booked</button>
+      <button class="lead-mark-btn {{ 'active' if ps == 'dismissed' }}" data-s="dismissed" onclick="markLead('{{ lead.id }}','dismissed')">Not interested</button>
+    </div>
+
+    <div class="lead-note" id="note-{{ lead.id }}" hidden>
+      <textarea class="form-input" id="note-text-{{ lead.id }}" rows="2" placeholder="Private note...">{{ lead.notes or '' }}</textarea>
+      <button class="btn btn-small btn-secondary" onclick="saveNote('{{ lead.id }}')">Save note</button>
+    </div>
   </div>
-  {% else %}
+  {% endfor %}
+</div>
+<div class="lead-empty-filtered" id="lead-empty-filtered" hidden>No leads match your filters.</div>
+{% else %}
+<div class="card">
   <div class="empty-state">
     <div class="empty-icon"><i class="ti ti-target"></i></div>
     <div class="empty-title">No leads yet</div>
     <div class="empty-desc">Start the bot and it will find matching posts automatically.</div>
-    <button class="btn-primary" onclick="startBot()">Start Monitoring</button>
+    <button class="btn btn-primary" onclick="startBot()">Start Monitoring</button>
   </div>
-  {% endif %}
 </div>
+{% endif %}
 
+<!-- Suggested reply modal -->
 <div id="reply-modal" class="modal-overlay">
   <div class="modal">
-    <h3>Suggested Reply</h3>
-    <p class="text-muted">The Facebook post opened in a new tab. Copy this reply, paste it there, and send manually. Then mark the lead as replied.</p>
+    <h3>Suggested Reply <span class="reply-source" id="reply-source"></span></h3>
+    <p class="text-muted">Copy this, open the post in Facebook, and send it yourself. Ivan never auto-posts.</p>
     <div class="form-group">
-      <textarea id="reply-text" class="form-input" rows="5"></textarea>
+      <textarea id="reply-text" class="form-input" rows="6"></textarea>
     </div>
     <div class="modal-actions">
-      <button class="btn btn-secondary" onclick="copyReplyText()">Copy</button>
+      <button class="btn btn-secondary" onclick="copyReplyText()"><i class="ti ti-copy"></i> Copy</button>
       <button class="btn btn-secondary" onclick="closeModal('reply-modal')">Close</button>
-      <button class="btn btn-primary" onclick="markReplied()">Mark Replied</button>
     </div>
   </div>
 </div>
@@ -115,9 +164,83 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='coach.js') }}"></script>
 <script>
-function addAsStudent(btn) {
-  Coach.openAddStudent(btn.getAttribute('data-name') || '');
+function filterLeadCards() {
+  const st = (document.getElementById('filter-status').value || '').toLowerCase();
+  const gp = (document.getElementById('filter-group').value || '').toLowerCase();
+  const q = (document.getElementById('filter-search').value || '').toLowerCase();
+  let shown = 0;
+  document.querySelectorAll('#lead-cards .lead-card').forEach(card => {
+    const okSt = !st || card.dataset.status === st;
+    const okGp = !gp || (card.dataset.group || '').toLowerCase() === gp;
+    const okQ = !q || (card.dataset.text || '').includes(q);
+    const vis = okSt && okGp && okQ;
+    card.style.display = vis ? '' : 'none';
+    if (vis) shown++;
+  });
+  const empty = document.getElementById('lead-empty-filtered');
+  if (empty) empty.hidden = shown !== 0 || !document.querySelector('#lead-cards .lead-card');
 }
-window.onStudentsChanged = function () { Coach.toast('Student added', 'success'); };
+
+async function markLead(id, status) {
+  try {
+    await Coach.postJSON(`/api/leads/${id}/status`, { status });
+    const card = document.getElementById(`lead-${id}`);
+    if (card) {
+      card.dataset.status = status;
+      card.querySelectorAll('.lead-mark-btn').forEach(b => b.classList.toggle('active', b.dataset.s === status));
+      const chip = card.querySelector('.lead-status-chip');
+      if (chip) { chip.className = 'lead-status-chip chip-' + status; chip.textContent = status.charAt(0).toUpperCase() + status.slice(1); }
+    }
+    Coach.toast('Updated', 'success');
+    filterLeadCards();
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+let currentReplyLead = null;
+async function suggestReply(id) {
+  currentReplyLead = id;
+  const ta = document.getElementById('reply-text');
+  const src = document.getElementById('reply-source');
+  ta.value = 'Drafting a reply...';
+  src.textContent = '';
+  openModal('reply-modal');
+  try {
+    const r = await Coach.postJSON(`/api/leads/${id}/suggest-reply`, {});
+    ta.value = r.text || '';
+    src.textContent = r.source === 'ai' ? 'AI-drafted' : 'Template';
+  } catch (e) { ta.value = ''; Coach.toast(e.message, 'error'); }
+}
+function copyReplyText() {
+  const ta = document.getElementById('reply-text');
+  ta.select();
+  navigator.clipboard.writeText(ta.value).then(() => Coach.toast('Copied', 'success')).catch(() => {});
+}
+
+async function convertLead(id, name) {
+  if (!await Coach.confirm({ title: 'Convert to student?', message: `Create a student record for ${name || 'this lead'} and mark the lead booked?`, confirmText: 'Convert', cancelText: 'Cancel' })) return;
+  try {
+    await Coach.postJSON(`/api/leads/${id}/convert-to-student`, {});
+    Coach.toast('Student created — lead marked booked', 'success');
+    const card = document.getElementById(`lead-${id}`);
+    if (card) {
+      card.dataset.status = 'booked';
+      card.querySelectorAll('.lead-mark-btn').forEach(b => b.classList.toggle('active', b.dataset.s === 'booked'));
+      const chip = card.querySelector('.lead-status-chip');
+      if (chip) { chip.className = 'lead-status-chip chip-booked'; chip.textContent = 'Booked'; }
+    }
+    filterLeadCards();
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+function toggleNote(id) {
+  const el = document.getElementById(`note-${id}`);
+  if (el) el.hidden = !el.hidden;
+}
+async function saveNote(id) {
+  try {
+    await Coach.postJSON(`/api/leads/${id}/notes`, { notes: document.getElementById(`note-text-${id}`).value });
+    Coach.toast('Note saved', 'success');
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
 </script>
 {% endblock %}

@@ -70,11 +70,15 @@ if errorlevel 1 (
     exit /b 1
 )
 
-REM --- 5. Generate the app (PWA) icons ------------------------------
+REM --- 5. Generate the app icons (PWA, iOS, Windows) ----------------
 echo  [5/5] Generating app icons...
 call "venv\Scripts\python.exe" app\generate_icons.py
 if errorlevel 1 (
-    echo  [!] Could not generate app icons (non-critical). Continuing...
+    echo  [!] Could not generate PWA icons (non-critical). Continuing...
+)
+call "venv\Scripts\python.exe" generate_icons.py
+if errorlevel 1 (
+    echo  [!] Could not generate iOS/Windows icons (non-critical). Continuing...
 )
 
 REM --- Create a desktop shortcut to run.bat --------------------------

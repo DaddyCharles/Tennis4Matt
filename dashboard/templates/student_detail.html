@@ -15,10 +15,63 @@
 
 <div class="coach-cols">
   <section class="coach-col-main">
-    <div class="card">
-      <div class="card-title"><i class="ti ti-history"></i> Lesson History</div>
-      <div id="student-lessons" class="lesson-list">
-        <div class="empty-state"><div class="empty-title">Loading…</div></div>
+    <div class="student-tabs">
+      <button class="student-tab active" data-tab="lessons" onclick="switchStudentTab('lessons')">Lessons</button>
+      <button class="student-tab" data-tab="progress" onclick="switchStudentTab('progress')">Progress</button>
+    </div>
+
+    <div class="student-tab-panel" id="panel-lessons">
+      <div class="card">
+        <div class="card-title"><i class="ti ti-history"></i> Lesson History</div>
+        <div id="student-lessons" class="lesson-list">
+          <div class="empty-state"><div class="empty-title">Loading…</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="student-tab-panel" id="panel-progress" hidden>
+      <div class="card progress-card">
+        <div class="progress-block-head">CURRENT FOCUS</div>
+        <div class="progress-editable" id="focus-view">
+          <p class="progress-text" id="focus-text">—</p>
+          <button class="btn-mini" onclick="editProgress('focus')"><i class="ti ti-edit"></i> Edit</button>
+        </div>
+        <div class="progress-edit" id="focus-edit" hidden>
+          <textarea class="form-input" id="focus-input" rows="2"></textarea>
+          <div class="btn-group"><button class="btn btn-primary btn-small" onclick="saveProgress('focus')">Save</button>
+            <button class="btn btn-secondary btn-small" onclick="cancelProgress('focus')">Cancel</button></div>
+        </div>
+      </div>
+
+      <div class="progress-two-col">
+        <div class="card progress-card">
+          <div class="progress-block-head">STRENGTHS</div>
+          <div class="chip-list" id="strengths-list"></div>
+          <button class="btn-mini" onclick="addChip('strengths')"><i class="ti ti-plus"></i> Add</button>
+        </div>
+        <div class="card progress-card">
+          <div class="progress-block-head">AREAS TO IMPROVE</div>
+          <div class="chip-list" id="areas-list"></div>
+          <button class="btn-mini" onclick="addChip('areas_to_improve')"><i class="ti ti-plus"></i> Add</button>
+        </div>
+      </div>
+
+      <div class="card progress-card">
+        <div class="progress-block-head">GOALS</div>
+        <div class="progress-editable" id="goals-view">
+          <p class="progress-text" id="goals-text">—</p>
+          <button class="btn-mini" onclick="editProgress('goals')"><i class="ti ti-edit"></i> Edit</button>
+        </div>
+        <div class="progress-edit" id="goals-edit" hidden>
+          <textarea class="form-input" id="goals-input" rows="2"></textarea>
+          <div class="btn-group"><button class="btn btn-primary btn-small" onclick="saveProgress('goals')">Save</button>
+            <button class="btn btn-secondary btn-small" onclick="cancelProgress('goals')">Cancel</button></div>
+        </div>
+      </div>
+
+      <div class="card progress-card">
+        <div class="progress-block-head">SESSION LOG</div>
+        <div id="session-log" class="session-log"><div class="biz-empty">Loading…</div></div>
       </div>
     </div>
   </section>
@@ -108,11 +161,21 @@
 const STUDENT_ID = "{{ student.id }}";
 const STUDENT = {{ student|tojson }};
 
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
 function statusBadge(s) { return `<span class="status-badge status-${s}">${s}</span>`; }
+
+let LESSONS_CACHE = [];
 
 async function loadLessons() {
   const data = await Coach.getJSON(`/api/students/${STUDENT_ID}/lessons`);
   const lessons = data.lessons || [];
+  LESSONS_CACHE = lessons;
+  renderSessionLog();
   document.getElementById('d-count').textContent = lessons.length;
   const list = document.getElementById('student-lessons');
   if (!lessons.length) {
@@ -128,8 +191,10 @@ async function loadLessons() {
         <div class="lesson-meta">${l.lesson_summary || l.notes || 'No notes'}</div>
       </div>
       <div class="lesson-actions">
-        ${paid ? '<span class="badge level-beginner">Paid</span>'
-               : `<button class="btn-mini" onclick="markPaid('${l.id}')">Mark paid</button>`}
+        ${l.status === 'cancelled'
+          ? `<button class="btn-mini" onclick="rescheduleLesson('${l.id}')"><i class="ti ti-calendar-plus"></i> Reschedule</button>`
+          : (paid ? '<span class="badge level-beginner">Paid</span>'
+                  : `<button class="btn-mini" onclick="markPaid('${l.id}')">Mark paid</button>`)}
       </div>
     </div>`;
   }).join('');
@@ -228,6 +293,109 @@ async function loadInvoices() {
   } catch (e) { box.innerHTML = `<div class="biz-empty">${e.message}</div>`; }
 }
 
+/* ---- Progress tab ---------------------------------------------------- */
+let PROFILE = (STUDENT.coaching_profile) || {};
+
+function switchStudentTab(tab) {
+  document.querySelectorAll('.student-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('panel-lessons').hidden = (tab !== 'lessons');
+  document.getElementById('panel-progress').hidden = (tab !== 'progress');
+}
+
+function renderProfile() {
+  document.getElementById('focus-text').textContent = PROFILE.current_focus || 'No current focus set.';
+  document.getElementById('goals-text').textContent = PROFILE.goals || 'No goals set.';
+  renderChips('strengths', PROFILE.strengths || []);
+  renderChips('areas_to_improve', PROFILE.areas_to_improve || []);
+}
+
+function chipBoxId(field) { return field === 'strengths' ? 'strengths-list' : 'areas-list'; }
+
+function renderChips(field, items) {
+  const box = document.getElementById(chipBoxId(field));
+  box.innerHTML = items.map((t, i) =>
+    `<span class="chip"><span>${esc(t)}</span><button class="chip-x" onclick="removeChip('${field}', ${i})" aria-label="Remove">&times;</button></span>`
+  ).join('') || '<span class="biz-empty">None yet.</span>';
+}
+
+function editProgress(which) {
+  const field = which === 'focus' ? 'current_focus' : 'goals';
+  document.getElementById(`${which}-input`).value = PROFILE[field] || '';
+  document.getElementById(`${which}-view`).hidden = true;
+  document.getElementById(`${which}-edit`).hidden = false;
+}
+function cancelProgress(which) {
+  document.getElementById(`${which}-view`).hidden = false;
+  document.getElementById(`${which}-edit`).hidden = true;
+}
+async function saveProgress(which) {
+  const field = which === 'focus' ? 'current_focus' : 'goals';
+  const val = document.getElementById(`${which}-input`).value.trim();
+  await persistProfile({ [field]: val });
+  cancelProgress(which);
+}
+
+async function addChip(field) {
+  const val = prompt(field === 'strengths' ? 'Add a strength:' : 'Add an area to improve:');
+  if (!val || !val.trim()) return;
+  const items = (PROFILE[field] || []).slice();
+  items.push(val.trim());
+  await persistProfile({ [field]: items });
+}
+async function removeChip(field, idx) {
+  const items = (PROFILE[field] || []).slice();
+  items.splice(idx, 1);
+  await persistProfile({ [field]: items });
+}
+
+async function persistProfile(changes) {
+  try {
+    const res = await Coach.postJSON(`/api/students/${STUDENT_ID}/coaching-profile`, changes);
+    PROFILE = res.coaching_profile || PROFILE;
+    renderProfile();
+    Coach.toast('Saved', 'success');
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+function renderSessionLog() {
+  const box = document.getElementById('session-log');
+  if (!box) return;
+  const lessons = (LESSONS_CACHE || []).filter(l => l.status !== 'cancelled');
+  if (!lessons.length) { box.innerHTML = '<div class="biz-empty">No sessions yet.</div>'; return; }
+  box.innerHTML = lessons.map(l => {
+    const notes = l.coach_notes || '';
+    const body = notes
+      ? `<p class="session-note" id="note-${l.id}">${esc(notes)}</p>`
+      : `<p class="session-note muted" id="note-${l.id}">No notes for this session</p>`;
+    return `<div class="session-entry">
+      <div class="session-entry-head">${l.date} · ${l.duration_minutes} min</div>
+      ${body}
+      <div class="session-edit-wrap" id="note-edit-${l.id}" hidden>
+        <textarea class="form-input" id="note-input-${l.id}" rows="2">${esc(notes)}</textarea>
+        <div class="btn-group"><button class="btn btn-primary btn-small" onclick="saveSessionNote('${l.id}')">Save</button>
+          <button class="btn btn-secondary btn-small" onclick="toggleSessionNote('${l.id}', false)">Cancel</button></div>
+      </div>
+      <button class="btn-mini session-note-btn" onclick="toggleSessionNote('${l.id}', true)">${notes ? 'Edit note' : 'Add note'}</button>
+    </div>`;
+  }).join('');
+}
+
+function toggleSessionNote(id, editing) {
+  document.getElementById(`note-${id}`).hidden = editing;
+  document.getElementById(`note-edit-${id}`).hidden = !editing;
+}
+async function saveSessionNote(id) {
+  const val = document.getElementById(`note-input-${id}`).value;
+  try {
+    await Coach.postJSON(`/api/lessons/${id}/coach-notes`, { coach_notes: val });
+    const lesson = LESSONS_CACHE.find(l => l.id === id);
+    if (lesson) lesson.coach_notes = val;
+    renderSessionLog();
+    Coach.toast('Note saved', 'success');
+  } catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+renderProfile();
 loadLessons();
 loadPackages();
 loadInvoices();

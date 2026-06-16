@@ -11,12 +11,39 @@ async function apiCall(url, method = 'GET', body = null) {
   return data;
 }
 
+async function confirmDialog(opts) {
+  if (typeof Coach !== 'undefined' && Coach.confirm) return Coach.confirm(opts);
+  return window.confirm(opts.message || opts.title || 'Are you sure?');
+}
+
 function showToast(message, type = 'success') {
   const toast = document.createElement('div');
   toast.className = `toast toast-${type}`;
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
+}
+
+async function rescheduleLesson(lessonId) {
+  try {
+    const res = await fetch(`/api/lessons/${lessonId}/reschedule-data`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || 'Could not load lesson');
+    if (typeof Coach === 'undefined' || !Coach.openAddLesson) {
+      showToast('Reschedule not available here', 'error');
+      return;
+    }
+    Coach.openAddLesson({
+      student_id: data.student_id,
+      blocks: data.blocks,
+      price: data.price,
+      date: '',
+      start_time: '',
+      notes: data.original_date ? `Rescheduled from ${data.original_date}` : '',
+    });
+  } catch (e) {
+    showToast(e.message || 'Reschedule failed', 'error');
+  }
 }
 
 function levelOf(line) {
@@ -335,7 +362,7 @@ async function setLeadStatus(leadId, status) {
 }
 
 async function deleteLead(leadId) {
-  if (!confirm('Delete this lead permanently?')) return;
+  if (!await confirmDialog({ title: 'Delete lead?', message: 'This lead will be permanently removed.', confirmText: 'Delete' })) return;
   const data = await apiCall(`/leads/${leadId}/delete`, 'POST');
   if (data.status === 'ok') { showToast('Lead deleted'); setTimeout(() => location.reload(), 500); }
   else showToast(data.message || 'Failed', 'error');
@@ -430,7 +457,7 @@ function switchTab(tab) {
 }
 
 async function loadPreset(presetId) {
-  if (!confirm('This will replace your current keywords. Continue?')) return;
+  if (!await confirmDialog({ title: 'Load preset?', message: 'This will replace your current keywords.', confirmText: 'Load preset', danger: false })) return;
   const data = await apiCall(`/keywords/load-preset/${presetId}`, 'POST');
   if (data.status === 'ok') {
     showToast(`Preset loaded (${data.categories_loaded} categories)`);
@@ -491,7 +518,7 @@ async function toggleGroup(groupId) {
 }
 
 async function deleteGroup(groupId) {
-  if (!confirm('Delete this group?')) return;
+  if (!await confirmDialog({ title: 'Delete group?', message: 'This group will be permanently removed.', confirmText: 'Delete' })) return;
   const data = await apiCall(`/groups/${groupId}/delete`, 'POST');
   if (data.status === 'ok') { showToast('Group deleted'); setTimeout(() => window.location.reload(), 400); }
   else showToast(data.message || 'Failed', 'error');
@@ -533,8 +560,6 @@ async function saveSettings() {
   const get = (id) => { const el = document.getElementById(id); return el ? el.value : ''; };
   const checked = (id) => { const el = document.getElementById(id); return el ? el.checked : false; };
   const body = {
-    user_title: get('user_title'),
-    user_name: get('user_name'),
     scan_interval_minutes: get('scan_interval_minutes'),
     active_hours_start: get('active_hours_start'),
     active_hours_end: get('active_hours_end'),
@@ -572,7 +597,7 @@ async function testSession() {
 // --------------------------------------------------------- Settings: setup
 
 async function resetOnboarding() {
-  if (!confirm('This will restart the setup wizard. Continue?')) return;
+  if (!await confirmDialog({ title: 'Restart setup?', message: 'This will restart the setup wizard.', confirmText: 'Restart', danger: false })) return;
   await fetch('/onboarding/reset', { method: 'POST' });
   window.location.href = '/onboarding';
 }
@@ -857,3 +882,373 @@ document.addEventListener('DOMContentLoaded', function () {
     });
   }
 });
+
+/* ============================================================================
+   Help & Guided Setup system
+   ========================================================================== */
+
+let _helpSettings = null;
+async function getHelpSettings() {
+  if (_helpSettings) return _helpSettings;
+  try { _helpSettings = await (await fetch('/api/settings/help')).json(); }
+  catch (e) { _helpSettings = { show_help_button: true, show_feature_tips: true, completed_tours: [], dismissed_tips: [] }; }
+  return _helpSettings;
+}
+
+function helpPageKey() {
+  const p = window.location.pathname;
+  if (p === '/' || p.startsWith('/coach')) return 'coach';
+  for (const k of ['calendar', 'students', 'earnings', 'invoices', 'expenses', 'tax', 'packages', 'sms', 'dashboard', 'settings']) {
+    if (p.startsWith('/' + k)) return k;
+  }
+  return 'coach';
+}
+
+const HELP_CONTENT = {
+  coach: {
+    title: 'Today',
+    body: 'Your daily home screen. Shows weather, court conditions, today’s lessons and quick stats.',
+    tour: 'basics',
+    actions: [
+      { icon: 'ti-plus', label: 'Add a lesson', onclick: "closeHelp(); if(window.Coach) Coach.openAddLesson();" },
+      { icon: 'ti-calendar', label: 'Open calendar', href: '/calendar' },
+      { icon: 'ti-chart-bar', label: 'View earnings', href: '/earnings' },
+    ],
+  },
+  calendar: {
+    title: 'Calendar',
+    body: 'Your weekly lesson schedule. Click any slot to add a lesson. Click a lesson to edit or cancel it.',
+    tour: 'book_lesson',
+    actions: [
+      { icon: 'ti-plus', label: 'Add a lesson', onclick: "closeHelp(); if(window.Coach) Coach.openAddLesson();" },
+      { icon: 'ti-home', label: 'Back to Today', href: '/coach' },
+      { icon: 'ti-users', label: 'Manage students', href: '/students' },
+    ],
+  },
+  students: {
+    title: 'Students',
+    body: 'All your students in one place. Add new students here. Click a student to see their full history.',
+    tour: 'add_student',
+    actions: [
+      { icon: 'ti-user-plus', label: 'Add a student', onclick: "closeHelp(); if(window.Coach) Coach.openAddStudent();" },
+      { icon: 'ti-calendar', label: 'Open calendar', href: '/calendar' },
+      { icon: 'ti-message-2', label: 'Send an SMS', href: '/sms' },
+    ],
+  },
+  earnings: {
+    title: 'Earnings',
+    body: 'Track your income with weekly, monthly and daily charts. Update your lesson prices here too.',
+    tour: 'earnings_tax',
+    actions: [
+      { icon: 'ti-settings', label: 'Update prices', href: '/settings' },
+      { icon: 'ti-file-invoice', label: 'View invoices', href: '/invoices' },
+      { icon: 'ti-calculator', label: 'Tax estimator', href: '/tax' },
+    ],
+  },
+  invoices: {
+    title: 'Invoices',
+    body: 'Generate PDF invoices for completed lessons. Download and send to students.',
+    tour: 'earnings_tax',
+    actions: [
+      { icon: 'ti-settings', label: 'Invoice settings', href: '/settings' },
+      { icon: 'ti-chart-bar', label: 'View earnings', href: '/earnings' },
+      { icon: 'ti-home', label: 'Back to Today', href: '/coach' },
+    ],
+  },
+  expenses: {
+    title: 'Expenses',
+    body: 'Log your business expenses. Ivan tracks your ATO deductions including km travel and home office hours.',
+    tour: 'earnings_tax',
+    actions: [
+      { icon: 'ti-calculator', label: 'Tax estimator', href: '/tax' },
+      { icon: 'ti-settings', label: 'Settings', href: '/settings' },
+      { icon: 'ti-chart-bar', label: 'View earnings', href: '/earnings' },
+    ],
+  },
+  tax: {
+    title: 'Tax Estimator',
+    body: 'See your estimated tax based on real earnings and expenses. Shows GST threshold and quarterly PAYG amounts.',
+    tour: 'earnings_tax',
+    actions: [
+      { icon: 'ti-chart-bar', label: 'View earnings', href: '/earnings' },
+      { icon: 'ti-receipt', label: 'View expenses', href: '/expenses' },
+      { icon: 'ti-settings', label: 'Tax settings', href: '/settings' },
+    ],
+  },
+  packages: {
+    title: 'Packages',
+    body: 'Sell lesson packs upfront at a discount. Ivan tracks how many sessions remain for each student.',
+    tour: 'basics',
+    actions: [
+      { icon: 'ti-users', label: 'View students', href: '/students' },
+      { icon: 'ti-file-invoice', label: 'View invoices', href: '/invoices' },
+      { icon: 'ti-home', label: 'Back to Today', href: '/coach' },
+    ],
+  },
+  sms: {
+    title: 'SMS',
+    body: 'Send text messages to individual students or groups. Set up Twilio first in Settings to enable this.',
+    tour: 'send_sms',
+    actions: [
+      { icon: 'ti-settings', label: 'SMS settings', href: '/settings' },
+      { icon: 'ti-users', label: 'Manage students', href: '/students' },
+      { icon: 'ti-home', label: 'Back to Today', href: '/coach' },
+    ],
+  },
+  dashboard: {
+    title: 'Lead Monitor',
+    body: 'Finds people looking for tennis coaching in Facebook groups. Start the bot to begin monitoring.',
+    tour: 'basics',
+    actions: [
+      { icon: 'ti-target', label: 'View leads', href: '/leads' },
+      { icon: 'ti-search', label: 'Keywords', href: '/keywords' },
+      { icon: 'ti-users', label: 'Groups', href: '/groups' },
+    ],
+  },
+  settings: {
+    title: 'Settings',
+    body: 'Configure everything about Ivan. Turn features on or off, set your location, prices, and connected services.',
+    tour: 'basics',
+    actions: [
+      { icon: 'ti-route', label: 'Take Ivan Basics tour', onclick: "closeHelp(); startTour('basics');" },
+      { icon: 'ti-home', label: 'Back to Today', href: '/coach' },
+      { icon: 'ti-refresh', label: 'Re-run setup wizard', onclick: "if(typeof resetOnboarding==='function') resetOnboarding();" },
+    ],
+  },
+};
+
+async function openHelp() {
+  const key = helpPageKey();
+  const c = HELP_CONTENT[key] || HELP_CONTENT.coach;
+  document.getElementById('help-drawer-title').textContent = c.title;
+  document.getElementById('help-drawer-body').textContent = c.body;
+  const qa = document.getElementById('help-quick-actions');
+  qa.innerHTML = (c.actions || []).map(a => {
+    const inner = `<i class="ti ${a.icon}"></i> ${a.label}`;
+    if (a.href) return `<a class="help-qa" href="${a.href}">${inner}</a>`;
+    return `<button class="help-qa" onclick="${a.onclick}">${inner}</button>`;
+  }).join('');
+  const tourBtn = document.getElementById('help-tour-btn');
+  tourBtn.dataset.tour = c.tour || '';
+  tourBtn.style.display = c.tour ? '' : 'none';
+  document.getElementById('help-overlay').classList.add('open');
+  document.getElementById('help-drawer').classList.add('open');
+  document.getElementById('help-drawer').setAttribute('aria-hidden', 'false');
+}
+function closeHelp() {
+  document.getElementById('help-overlay').classList.remove('open');
+  document.getElementById('help-drawer').classList.remove('open');
+  document.getElementById('help-drawer').setAttribute('aria-hidden', 'true');
+}
+function startPageTour() {
+  const tour = document.getElementById('help-tour-btn').dataset.tour;
+  closeHelp();
+  if (tour) startTour(tour);
+}
+
+/* ---- Tour definitions ----------------------------------------------------- */
+const TOURS = {
+  basics: {
+    id: 'basics', name: 'Ivan Basics', steps: [
+      { selector: '.sidebar', title: 'Your Main Menu', text: 'Use this to navigate between all parts of Ivan.', position: 'right' },
+      { selector: '.weather-strip', title: 'Weather & Conditions', text: "Today's weather updates automatically. It shows if it's good, marginal, or poor for tennis.", position: 'bottom' },
+      { selector: '.week-forecast', title: '7-Day Forecast', text: 'See which days this week might be rainy. Click any day to see your lessons for that day.', position: 'bottom' },
+      { selector: '#today-lessons', title: "Today's Lessons", text: 'Your lessons for today appear here. Tap Complete after each lesson.', position: 'top' },
+      { selector: '.quick-stats', title: 'Quick Stats', text: 'Your earnings and lesson counts update in real time.', position: 'left' },
+    ],
+  },
+  add_student: {
+    id: 'add_student', name: 'Adding Your First Student', steps: [
+      { selector: 'a.nav-link[href="/students"]', title: 'Students', text: 'Click Students to manage all your coaching clients.', position: 'right' },
+      { selector: 'button[onclick*="openAddStudent"]', title: 'Add Student', text: 'Click here to add a new student.', position: 'bottom' },
+      { selector: '#student-name', title: 'Student Details', text: 'Fill in their name, phone number, and level. The phone number is used for SMS.', position: 'right' },
+      { selector: '#student-modal .btn-primary', title: 'Save', text: 'Click Save Student and they appear in your roster immediately.', position: 'top' },
+    ],
+  },
+  book_lesson: {
+    id: 'book_lesson', name: 'Booking a Lesson', steps: [
+      { selector: 'button[onclick*="openAddLesson"]', title: 'Add Lesson', text: 'Tap this to book a new lesson.', position: 'bottom' },
+      { selector: '#lesson-student', title: 'Choose Student', text: 'Select which student this lesson is for.', position: 'right' },
+      { selector: '.duration-picker', title: 'Lesson Duration', text: 'Pick a duration, or use the +/− stepper for a custom length.', position: 'right' },
+      { selector: '#lesson-price', title: 'Price', text: 'The price fills in automatically from your settings. You can change it here.', position: 'right' },
+      { selector: '#lesson-recurring', title: 'Recurring Lessons', text: 'Turn this on for weekly recurring lessons. Ivan creates all future sessions automatically.', position: 'top' },
+    ],
+  },
+  send_sms: {
+    id: 'send_sms', name: 'Sending an SMS', steps: [
+      { selector: 'a.nav-link[href="/sms"]', title: 'SMS', text: 'Click SMS to send text messages to your students.', position: 'right' },
+      { selector: '#sms-tabs, .filter-tabs', title: 'Groups', text: 'Create groups here — for example Monday Group or Advanced Students.', position: 'bottom' },
+      { selector: '#sms-template, .template-picker', title: 'Template', text: 'Choose a message template. Rain Cancellation is perfect for weather cancellations.', position: 'bottom' },
+      { selector: '#sms-message, textarea', title: 'Compose', text: 'Review and edit the message. {name} automatically becomes each student’s first name.', position: 'top' },
+      { selector: '#sms-send, button[onclick*="send"]', title: 'Send', text: 'Tap Send and Ivan texts all selected contacts. You see a delivery report immediately.', position: 'top' },
+    ],
+  },
+  twilio_setup: {
+    id: 'twilio_setup', name: 'Setting Up SMS with Twilio', steps: [
+      { selector: 'a.nav-link[href="/settings"]', title: 'Settings', text: 'First go to Settings.', position: 'right' },
+      { selector: '#modules-section, .modules-grid', title: 'Modules', text: 'Make sure SMS is turned ON here.', position: 'bottom' },
+      { selector: '#twilio-section, #sms-section', title: 'Twilio Setup', text: 'Scroll down to find the Twilio setup section.', position: 'top' },
+      { selector: '#twilio-sid, #twilio_account_sid', title: 'Account SID', text: 'Paste your Twilio Account SID here. You get this from twilio.com.', position: 'right' },
+      { selector: '#twilio-token, #twilio_auth_token', title: 'Auth Token', text: 'Paste your Auth Token here.', position: 'right' },
+      { selector: '#twilio-test, button[onclick*="twilio"]', title: 'Test Connection', text: "Click this to test — you'll receive a test text on your own phone.", position: 'top' },
+    ],
+  },
+  earnings_tax: {
+    id: 'earnings_tax', name: 'Earnings and Tax', steps: [
+      { selector: 'a.nav-link[href="/earnings"]', title: 'Earnings', text: 'Click Earnings to see your income charts.', position: 'right' },
+      { selector: '#chart-weekly', title: 'Weekly Chart', text: 'This shows your earnings for the last 8 weeks.', position: 'bottom' },
+      { selector: '.chart-grid, #chart-monthly', title: 'Your Charts', text: 'Weekly, monthly and daily views of your income.', position: 'top' },
+      { selector: 'a.nav-link[href="/tax"]', title: 'Tax Estimator', text: 'Click Tax Estimator to see your estimated Australian tax based on real data.', position: 'right' },
+    ],
+  },
+};
+
+/* ---- Tour runtime --------------------------------------------------------- */
+let _tourState = null;
+
+function startTour(tourId) {
+  const tour = TOURS[tourId];
+  if (!tour) return;
+  endTour();
+  const overlay = document.createElement('div');
+  overlay.className = 'tour-overlay';
+  document.body.appendChild(overlay);
+  _tourState = { tour, index: 0, overlay };
+  showTourStep(0);
+}
+
+function _cleanupTourEls() {
+  document.querySelector('.tour-tooltip')?.remove();
+  document.querySelector('.tour-highlight')?.remove();
+}
+
+function showTourStep(index) {
+  if (!_tourState) return;
+  const tour = _tourState.tour;
+  if (index < 0) index = 0;
+  if (index >= tour.steps.length) { return; }
+  _tourState.index = index;
+  _cleanupTourEls();
+
+  const step = tour.steps[index];
+  const target = document.querySelector(step.selector);
+  const rect = target ? target.getBoundingClientRect() : null;
+  const visible = rect && rect.width > 0 && rect.height > 0;
+
+  let hi = null;
+  if (visible) {
+    target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    hi = document.createElement('div');
+    hi.className = 'tour-highlight';
+    hi.style.cssText = `top:${rect.top - 4}px;left:${rect.left - 4}px;width:${rect.width + 8}px;height:${rect.height + 8}px;border:2px solid #00c88a;border-radius:8px;box-shadow:0 0 0 4000px rgba(0,0,0,0.6);`;
+    document.body.appendChild(hi);
+  }
+
+  const tip = document.createElement('div');
+  tip.className = 'tour-tooltip';
+  const last = index === tour.steps.length - 1;
+  tip.innerHTML = `
+    <div class="tour-header">
+      <span class="tour-step-num">${index + 1} of ${tour.steps.length}</span>
+      <button onclick="endTour()" class="tour-skip">Skip tour</button>
+    </div>
+    <h3 class="tour-title">${step.title}</h3>
+    <p class="tour-text">${step.text}</p>
+    <div class="tour-dots">
+      ${tour.steps.map((_, i) => `<span class="tour-dot ${i === index ? 'active' : (i < index ? 'done' : '')}"></span>`).join('')}
+    </div>
+    <div class="tour-nav">
+      ${index > 0 ? '<button onclick="prevTourStep()" class="btn btn-secondary btn-small">Back</button>' : '<span></span>'}
+      ${last
+        ? `<button onclick="completeTour('${tour.id}')" class="btn btn-primary btn-small">Done!</button>`
+        : '<button onclick="nextTourStep()" class="btn btn-primary btn-small">Next</button>'}
+    </div>`;
+  document.body.appendChild(tip);
+  positionTooltip(tip, rect, step.position);
+}
+
+function positionTooltip(tip, rect, position) {
+  const tw = tip.offsetWidth, th = tip.offsetHeight;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const m = 14;
+  let top, left;
+  if (!rect) {
+    top = (vh - th) / 2; left = (vw - tw) / 2;
+  } else {
+    switch (position) {
+      case 'right': left = rect.right + m; top = rect.top; break;
+      case 'left': left = rect.left - tw - m; top = rect.top; break;
+      case 'top': left = rect.left; top = rect.top - th - m; break;
+      default: left = rect.left; top = rect.bottom + m; break; // bottom
+    }
+  }
+  left = Math.max(m, Math.min(left, vw - tw - m));
+  top = Math.max(m, Math.min(top, vh - th - m));
+  tip.style.left = left + 'px';
+  tip.style.top = top + 'px';
+}
+
+function nextTourStep() { if (_tourState) showTourStep(_tourState.index + 1); }
+function prevTourStep() { if (_tourState) showTourStep(_tourState.index - 1); }
+function endTour() {
+  _cleanupTourEls();
+  document.querySelector('.tour-overlay')?.remove();
+  _tourState = null;
+}
+function completeTour(id) {
+  endTour();
+  fetch('/api/settings/complete-tour', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tour_id: id }),
+  }).then(() => { _helpSettings = null; if (typeof renderTourList === 'function') renderTourList(); });
+  if (typeof showToast === 'function') showToast('Tour complete!', 'success');
+}
+async function resetAllTours() {
+  await fetch('/api/settings/reset-tours', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+  _helpSettings = null;
+  if (typeof renderTourList === 'function') renderTourList();
+  if (typeof showToast === 'function') showToast('All tours reset', 'success');
+}
+
+/* ---- First-use feature tips ----------------------------------------------- */
+const FEATURE_TIPS = {
+  sms: { id: 'tip_sms', text: 'New to SMS? Set up Twilio in Settings first to enable texting. It takes about 5 minutes.', actions: [{ label: 'Set up SMS', href: '/settings' }, { label: 'Dismiss', dismiss: true }] },
+  tax: { id: 'tip_tax', text: 'This is an estimate based on your real Ivan data. Always check with your accountant for official advice.', actions: [{ label: 'Got it', dismiss: true }] },
+  expenses: { id: 'tip_expenses', text: 'Log your business expenses here to reduce your taxable income. Ivan uses ATO categories for tennis coaches.', actions: [{ label: 'Got it', dismiss: true }] },
+};
+
+async function maybeShowFeatureTip() {
+  const h = await getHelpSettings();
+  if (!h.show_feature_tips) return;
+  const key = helpPageKey();
+  const tip = FEATURE_TIPS[key];
+  if (!tip || (h.dismissed_tips || []).includes(tip.id)) return;
+  const content = document.querySelector('.content');
+  if (!content) return;
+  const card = document.createElement('div');
+  card.className = 'feature-tip';
+  card.innerHTML = `
+    <i class="ti ti-bulb tip-icon"></i>
+    <div class="tip-text">${tip.text}</div>
+    <div class="tip-actions">
+      ${tip.actions.map(a => a.href
+        ? `<a class="btn btn-primary" href="${a.href}">${a.label}</a>`
+        : `<button class="btn btn-secondary" data-dismiss="1">${a.label}</button>`).join('')}
+    </div>`;
+  const header = content.querySelector('.page-header');
+  if (header && header.nextSibling) content.insertBefore(card, header.nextSibling);
+  else content.insertBefore(card, content.firstChild);
+  card.querySelectorAll('[data-dismiss]').forEach(btn => btn.addEventListener('click', () => {
+    card.remove();
+    fetch('/api/settings/dismiss-tip', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tip_id: tip.id }) });
+    _helpSettings = null;
+  }));
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    if (_tourState) endTour();
+    else if (document.getElementById('help-drawer')?.classList.contains('open')) closeHelp();
+  }
+});
+
+document.addEventListener('DOMContentLoaded', () => { maybeShowFeatureTip(); });

@@ -89,7 +89,7 @@ async function markPaid(id) {
   catch (e) { Coach.toast(e.message, 'error'); }
 }
 async function delInvoice(id) {
-  if (!confirm('Delete this invoice?')) return;
+  if (!await Coach.confirm({ title: 'Delete invoice?', message: 'This invoice will be permanently removed.', confirmText: 'Delete' })) return;
   try { await Coach.del(`/api/invoices/${id}`); Coach.toast('Deleted', 'info'); refresh(); }
   catch (e) { Coach.toast(e.message, 'error'); }
 }

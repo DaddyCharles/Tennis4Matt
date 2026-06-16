@@ -1,49 +1,89 @@
-"""Optional AI features via the Anthropic Claude API.
+"""Optional AI features via GroqCloud (free, fast, no credit card).
 
-Every function returns None silently if no API key is configured, and all API
-calls are wrapped so a failure never crashes a request or background thread.
+Every function returns None / a failure dict silently if no API key is
+configured, and all API calls are wrapped so a failure never crashes a request
+or background thread.
 """
 
 import json
 
 from bot.logger import log_error, load_settings
 
-MODEL = "claude-sonnet-4-6"
+DEFAULT_MODEL = "llama-3.3-70b-versatile"
 MAX_TOKENS = 500
 TEMPERATURE = 0.7
 
 
+def _ai_settings() -> dict:
+    return load_settings().get("ai", {}) or {}
+
+
 def get_api_key() -> str:
-    return (load_settings().get("anthropic_api_key", "") or "").strip()
+    return (_ai_settings().get("groq_api_key", "") or "").strip()
+
+
+def get_model() -> str:
+    return _ai_settings().get("model", DEFAULT_MODEL) or DEFAULT_MODEL
 
 
 def ai_available() -> bool:
-    """True if an Anthropic API key is configured."""
+    """True if a Groq API key is configured."""
     return bool(get_api_key())
 
 
-def _call(prompt: str, system: str = None):
-    """Send a single-turn message to Claude and return the text, or None."""
+def get_groq_client():
+    """Return a Groq client, or None if no key / library unavailable."""
     key = get_api_key()
     if not key:
         return None
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=key)
-        kwargs = {
-            "model": MODEL,
-            "max_tokens": MAX_TOKENS,
-            "temperature": TEMPERATURE,
-            "messages": [{"role": "user", "content": prompt}],
-        }
+        from groq import Groq
+        return Groq(api_key=key)
+    except Exception as e:
+        log_error(f"Groq client init failed: {e}")
+        return None
+
+
+def _call(prompt: str, system: str = None):
+    """Send a single-turn message to Groq and return the text, or None."""
+    client = get_groq_client()
+    if not client:
+        return None
+    try:
+        messages = []
         if system:
-            kwargs["system"] = system
-        resp = client.messages.create(**kwargs)
-        parts = [b.text for b in resp.content if getattr(b, "type", "") == "text"]
-        return "".join(parts).strip()
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        resp = client.chat.completions.create(
+            model=get_model(),
+            messages=messages,
+            max_tokens=MAX_TOKENS,
+            temperature=TEMPERATURE,
+        )
+        return (resp.choices[0].message.content or "").strip()
     except Exception as e:
         log_error(f"AI call failed: {e}")
         return None
+
+
+def ai_generate(prompt: str, system: str = "You are a helpful assistant for a tennis coach.") -> dict:
+    """Return {success: bool, text: str, error: str}."""
+    if not ai_available():
+        return {"success": False, "error": "AI not configured", "text": ""}
+    text = _call(prompt, system)
+    if text is None:
+        return {"success": False, "error": "AI request failed", "text": ""}
+    return {"success": True, "text": text, "error": ""}
+
+
+def test_groq_connection() -> dict:
+    """Test the Groq key with a tiny prompt. Returns {success, message}."""
+    if not ai_available():
+        return {"success": False, "message": "No GroqCloud API key configured"}
+    result = ai_generate("Say 'connected' in one word.", "You are a test.")
+    if result["success"]:
+        return {"success": True, "message": "AI connected — GroqCloud is ready"}
+    return {"success": False, "message": result["error"]}
 
 
 def summarise_student_progress(student: dict, lessons: list):

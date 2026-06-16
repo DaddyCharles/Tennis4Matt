@@ -63,9 +63,10 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-# --- 5. Generate the app (PWA) icons -----------------------------
+# --- 5. Generate the app icons (PWA, iOS, Windows) ---------------
 echo "  [5/5] Generating app icons..."
-./venv/bin/python app/generate_icons.py || echo "  [!] Could not generate app icons (non-critical). Continuing..."
+./venv/bin/python app/generate_icons.py || echo "  [!] Could not generate PWA icons (non-critical). Continuing..."
+./venv/bin/python generate_icons.py || echo "  [!] Could not generate iOS/Windows icons (non-critical). Continuing..."
 
 # --- Make the run launchers executable ---------------------------
 chmod +x run.command run.sh 2>/dev/null

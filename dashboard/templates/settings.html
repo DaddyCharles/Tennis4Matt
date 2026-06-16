@@ -2,6 +2,28 @@
 {% block title %}Settings{% endblock %}
 {% block content %}
 
+{% macro timepicker(name, value) %}
+<div class="time-picker" data-name="{{ name }}">
+  <button type="button" class="tp-display" onclick="openTimePicker(this)">
+    <i class="ti ti-clock"></i> <span class="tp-value">—</span>
+  </button>
+  <div class="tp-dropdown">
+    <div class="tp-col" data-col="hour"></div>
+    <div class="tp-col" data-col="minute"></div>
+    <div class="tp-col" data-col="period"></div>
+  </div>
+  <input type="hidden" class="tp-input" id="{{ name }}" name="{{ name }}" value="{{ value }}">
+</div>
+{% endmacro %}
+
+{% macro stepper(id, value, min='0', max='', step='1') %}
+<div class="number-stepper">
+  <button type="button" class="stepper-btn minus" onclick="stepNumber(this, -1)">&minus;</button>
+  <input type="number" id="{{ id }}" value="{{ value }}" min="{{ min }}"{% if max != '' %} max="{{ max }}"{% endif %} step="{{ step }}">
+  <button type="button" class="stepper-btn plus" onclick="stepNumber(this, 1)">+</button>
+</div>
+{% endmacro %}
+
 <div class="page-header">
   <h1>Settings</h1>
   <button class="btn btn-primary" onclick="saveSettings()">Save Settings</button>
@@ -9,452 +31,629 @@
 
 {% set m = settings.modules if settings.modules else {} %}
 
-<!-- 1. Personalisation -->
-<div class="card">
-  <div class="card-title">Personalisation</div>
-  <p class="note">Your name appears in the welcome message on the dashboard.</p>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Your Title</label>
-      <input type="text" id="user_title" class="form-input" placeholder="Mr" value="{{ settings.user_title }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Your Name</label>
-      <input type="text" id="user_name" class="form-input" placeholder="Scheers" value="{{ settings.user_name }}">
+<input type="text" class="settings-search" placeholder="Search settings..." oninput="filterSettings(this.value)">
+
+<!-- 1. Modules -->
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('modules')">
+    <span class="acc-title"><i class="ti ti-apps"></i> Modules</span>
+    <span class="acc-sub">Feature toggles</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-modules">
+    <div class="acc-body-inner">
+      <p class="note">Turn sole-trader business tools on or off. Disabled modules are hidden from the sidebar.</p>
+      <label class="toggle-row">
+        <span class="toggle-label"><strong>Invoicing</strong><br><span class="note">Generate and track lesson invoices (PDF).</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="mod-invoicing" {{ 'checked' if m.invoicing else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <label class="toggle-row">
+        <span class="toggle-label"><strong>Expense Tracker</strong><br><span class="note">Log deductible costs with ATO categories.</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="mod-expense_tracker" {{ 'checked' if m.expense_tracker else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <label class="toggle-row">
+        <span class="toggle-label"><strong>Tax Estimator</strong><br><span class="note">Estimate Australian sole-trader tax &amp; GST.</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="mod-tax_estimator" {{ 'checked' if m.tax_estimator else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <label class="toggle-row">
+        <span class="toggle-label"><strong>Waitlist</strong><br><span class="note">Per-slot student waitlists.</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="mod-waitlist" {{ 'checked' if m.waitlist else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <label class="toggle-row">
+        <span class="toggle-label"><strong>Lesson Packages</strong><br><span class="note">Sell multi-lesson packs and track sessions.</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="mod-lesson_packages" {{ 'checked' if m.lesson_packages else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <label class="toggle-row">
+        <span class="toggle-label"><strong>SMS</strong><br><span class="note">Text students or whole groups via Twilio.</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="mod-sms" {{ 'checked' if m.sms else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveModules()">Save Modules</button>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- 2. Modules -->
-<div class="settings-section-head">
-  <h2 class="section-title"><i class="ti ti-briefcase"></i> Modules</h2>
-</div>
-
-<div class="card">
-  <div class="card-title">Enabled Modules</div>
-  <p class="note">Turn sole-trader business tools on or off. Disabled modules are hidden from the sidebar.</p>
-  <div class="module-toggles">
-    <label class="module-toggle">
-      <input type="checkbox" id="mod-invoicing" {{ 'checked' if m.invoicing else '' }}>
-      <span class="module-toggle-main"><strong>Invoicing</strong><span class="note">Generate and track lesson invoices (PDF).</span></span>
-    </label>
-    <label class="module-toggle">
-      <input type="checkbox" id="mod-expense_tracker" {{ 'checked' if m.expense_tracker else '' }}>
-      <span class="module-toggle-main"><strong>Expense Tracker</strong><span class="note">Log deductible costs with ATO categories.</span></span>
-    </label>
-    <label class="module-toggle">
-      <input type="checkbox" id="mod-tax_estimator" {{ 'checked' if m.tax_estimator else '' }}>
-      <span class="module-toggle-main"><strong>Tax Estimator</strong><span class="note">Estimate Australian sole-trader tax & GST.</span></span>
-    </label>
-    <label class="module-toggle">
-      <input type="checkbox" id="mod-waitlist" {{ 'checked' if m.waitlist else '' }}>
-      <span class="module-toggle-main"><strong>Waitlist</strong><span class="note">Per-slot student waitlists.</span></span>
-    </label>
-    <label class="module-toggle">
-      <input type="checkbox" id="mod-lesson_packages" {{ 'checked' if m.lesson_packages else '' }}>
-      <span class="module-toggle-main"><strong>Lesson Packages</strong><span class="note">Sell multi-lesson packs and track sessions.</span></span>
-    </label>
-    <label class="module-toggle">
-      <input type="checkbox" id="mod-sms" {{ 'checked' if m.sms else '' }}>
-      <span class="module-toggle-main"><strong>SMS</strong><span class="note">Text students or whole groups via Twilio.</span></span>
-    </label>
-  </div>
-  <div class="btn-group">
-    <button class="btn btn-primary" onclick="saveModules()">Save Modules</button>
-  </div>
-</div>
-
-<!-- 3-5. Coaching -->
-<div class="settings-section-head">
-  <h2 class="section-title"><i class="ti ti-ball-tennis"></i> Coaching</h2>
-  <button class="btn btn-primary" onclick="saveCoachSettings()">Save Coach Settings</button>
-</div>
-
-<div class="card">
-  <div class="card-title">Coach Profile</div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Title</label>
-      <input type="text" id="coach_title" class="form-input" placeholder="Mr" value="{{ settings.coach_title }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Name</label>
-      <input type="text" id="coach_name" class="form-input" placeholder="Matt" value="{{ settings.coach_name }}">
+<!-- 3. Coach Profile -->
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('coach')">
+    <span class="acc-title"><i class="ti ti-id-badge"></i> Coach Profile</span>
+    <span class="acc-sub">Name, court &amp; venue</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-coach">
+    <div class="acc-body-inner">
+      <p class="note">Your title and name appear in the dashboard welcome message, on invoices, and in lead replies.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Title</label>
+          <input type="text" id="coach_title" class="form-input" placeholder="Mr" value="{{ settings.coach_title }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Name</label>
+          <input type="text" id="coach_name" class="form-input" placeholder="Matt" value="{{ settings.coach_name }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Court / Venue Name <span class="label-hint">(shown on invoices and dashboard)</span></label>
+          <input type="text" id="court_name" class="form-input" placeholder="e.g. Panania Tennis Club" value="{{ settings.court_name }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Court address</label>
+          <input type="text" id="court_address" class="form-input" value="{{ settings.court_address }}">
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveCoachSettings()">Save Coach Settings</button>
+      </div>
     </div>
   </div>
 </div>
 
-<div class="card">
-  <div class="card-title">Lesson Pricing ($)</div>
-  <p class="note">Default prices used when adding lessons.</p>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">30 min</label>
-      <input type="number" min="0" step="5" id="price_30min" class="form-input" value="{{ settings.lesson_prices['30min'] if settings.lesson_prices else 45 }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">60 min</label>
-      <input type="number" min="0" step="5" id="price_60min" class="form-input" value="{{ settings.lesson_prices['60min'] if settings.lesson_prices else 80 }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">90 min</label>
-      <input type="number" min="0" step="5" id="price_90min" class="form-input" value="{{ settings.lesson_prices['90min'] if settings.lesson_prices else 110 }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">120 min</label>
-      <input type="number" min="0" step="5" id="price_120min" class="form-input" value="{{ settings.lesson_prices['120min'] if settings.lesson_prices else 140 }}">
-    </div>
-  </div>
-</div>
-
-<div class="card">
-  <div class="card-title">Weather &amp; Location</div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Court name</label>
-      <input type="text" id="court_name" class="form-input" value="{{ settings.court_name }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Court address</label>
-      <input type="text" id="court_address" class="form-input" value="{{ settings.court_address }}">
-    </div>
-  </div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Latitude</label>
-      <input type="number" step="0.0001" id="latitude" class="form-input" value="{{ settings.latitude }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Longitude</label>
-      <input type="number" step="0.0001" id="longitude" class="form-input" value="{{ settings.longitude }}">
-    </div>
-  </div>
-  <div class="btn-group">
-    <button class="btn btn-secondary" onclick="testWeather()"><i class="ti ti-cloud"></i> Test Weather</button>
-  </div>
-  <div id="weather-test-result" class="mt-1"></div>
-</div>
-
-<div class="card">
-  <div class="card-title">Working Hours &amp; Lights</div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Start</label>
-      <input type="time" id="working_hours_start" class="form-input" value="{{ settings.working_hours_start }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">End</label>
-      <input type="time" id="working_hours_end" class="form-input" value="{{ settings.working_hours_end }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Lights warning (min before sunset)</label>
-      <input type="number" min="0" step="5" id="lights_warning_minutes" class="form-input" value="{{ settings.lights_warning_minutes }}">
+<!-- 4. Lesson Pricing -->
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('pricing')">
+    <span class="acc-title"><i class="ti ti-currency-dollar"></i> Lesson Pricing</span>
+    <span class="acc-sub">30 / 60 / 90 / 120 min prices</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-pricing">
+    <div class="acc-body-inner">
+      <p class="note">Default prices used when adding lessons.</p>
+      <div class="form-row">
+        {% set dp = settings.pricing.duration_prices if settings.pricing and settings.pricing.duration_prices else {} %}
+        <div class="form-group">
+          <label class="form-label">30 min</label>
+          {{ stepper('price_30min', dp['30'] if dp.get('30') is not none else 45, '0', '', '5') }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">60 min</label>
+          {{ stepper('price_60min', dp['60'] if dp.get('60') is not none else 80, '0', '', '5') }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">90 min</label>
+          {{ stepper('price_90min', dp['90'] if dp.get('90') is not none else 110, '0', '', '5') }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">120 min</label>
+          {{ stepper('price_120min', dp['120'] if dp.get('120') is not none else 140, '0', '', '5') }}
+        </div>
+      </div>
+      <div class="preset-section">
+        <label class="form-label">Quick price presets</label>
+        <p class="note">These appear as one-tap buttons when booking a lesson.</p>
+        <div id="preset-list" class="preset-list"></div>
+        <div class="preset-add-row">
+          <input type="text" id="preset-new-name" class="form-input" placeholder="Name (e.g. Squad)">
+          <input type="number" id="preset-new-amount" class="form-input" placeholder="$" min="0" step="5">
+          <button class="btn btn-secondary" onclick="addPreset()"><i class="ti ti-plus"></i> Add preset</button>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveCoachSettings()">Save Pricing</button>
+      </div>
     </div>
   </div>
 </div>
 
-<div class="card">
-  <div class="card-title">Weekly Availability</div>
-  <p class="note">One start time per line per day (e.g. 16:00). Used for waitlists and scheduling.</p>
-  <div class="availability-grid" id="availability-grid">
-    {% set avail = settings.availability if settings.availability else {} %}
-    {% for day in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
-    <div class="form-group">
-      <label class="form-label">{{ day|capitalize }}</label>
-      <textarea class="form-input avail-day" data-day="{{ day }}" rows="3" placeholder="16:00">{{ (avail[day] or []) | join('\n') }}</textarea>
+<!-- 5. Weather & Location -->
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('location')">
+    <span class="acc-title"><i class="ti ti-map-pin"></i> Weather &amp; Location</span>
+    <span class="acc-sub">Forecast location</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-location">
+    <div class="acc-body-inner">
+      <div class="form-row">
+        <div class="form-group location-search-group">
+          <label class="form-label"><i class="ti ti-map-pin"></i> Weather Location <span class="label-hint">(type suburb or city to search)</span></label>
+          <input type="text" id="location_search" class="form-input" autocomplete="off"
+                 placeholder="Type a suburb or city, e.g. Panania"
+                 value="{{ settings.location }}">
+          <div id="location_results" class="location-dropdown" hidden></div>
+          <p class="note">Pick a place to set your weather forecast. Current: <strong id="location_current">{{ settings.location or '—' }}</strong></p>
+        </div>
+      </div>
+      <input type="hidden" id="latitude" value="{{ settings.latitude }}">
+      <input type="hidden" id="longitude" value="{{ settings.longitude }}">
+      <div class="btn-group">
+        <button class="btn btn-secondary" onclick="testWeather()"><i class="ti ti-cloud"></i> Test Weather</button>
+      </div>
+      <div id="weather-test-result" class="mt-1"></div>
     </div>
-    {% endfor %}
-  </div>
-  <div class="btn-group">
-    <button class="btn btn-primary" onclick="saveAvailability()">Save Availability</button>
   </div>
 </div>
 
-<!-- 6. Invoicing (module-gated) -->
+<!-- 6. Working Hours & Lights -->
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('hours')">
+    <span class="acc-title"><i class="ti ti-clock"></i> Working Hours &amp; Lights</span>
+    <span class="acc-sub">Start / end / lights warning</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-hours">
+    <div class="acc-body-inner">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Start</label>
+          {{ timepicker('working_hours_start', settings.working_hours_start) }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">End</label>
+          {{ timepicker('working_hours_end', settings.working_hours_end) }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Lights warning (min before sunset)</label>
+          {{ stepper('lights_warning_minutes', settings.lights_warning_minutes, '0', '120', '5') }}
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveCoachSettings()">Save Working Hours</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 7. Weekly Availability -->
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('availability')">
+    <span class="acc-title"><i class="ti ti-calendar-time"></i> Weekly Availability</span>
+    <span class="acc-sub">Set your hours for each day</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-availability">
+    <div class="acc-body-inner">
+      <p class="note">Set a start and end time for each working day, or tap a preset. Then Save.</p>
+
+      <div class="preset-bar">
+        <button class="preset-pill" onclick="applyPreset('weekday_mornings')">Weekday Mornings</button>
+        <button class="preset-pill" onclick="applyPreset('weekday_evenings')">Weekday Evenings</button>
+        <button class="preset-pill" onclick="applyPreset('weekends')">Weekends</button>
+        <button class="preset-pill" onclick="applyPreset('after_school')">After School</button>
+        <button class="preset-pill" onclick="applyPreset('every_day')">Every Day</button>
+        <button class="preset-pill" onclick="saveCustomPreset()"><i class="ti ti-plus"></i> Save current</button>
+      </div>
+
+      {% if custom_presets %}
+      <div class="preset-label">Your custom presets</div>
+      <div class="preset-bar" id="custom-preset-bar">
+        {% for name in custom_presets.keys() %}
+        <span class="preset-pill custom">
+          <span onclick="applyPreset('{{ name }}')">{{ name }}</span>
+          <span class="remove" onclick="deleteCustomPreset('{{ name }}')"><i class="ti ti-x"></i></span>
+        </span>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      {% set day_labels = {'monday':'Mon','tuesday':'Tue','wednesday':'Wed','thursday':'Thu','friday':'Fri','saturday':'Sat','sunday':'Sun'} %}
+      <div class="avail-days">
+        {% for day in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
+        {% set r = avail_ranges[day] %}
+        <div class="avail-row{{ ' is-closed' if not r.open else '' }}" data-day="{{ day }}">
+          <span class="avail-row-day">{{ day_labels[day] }}</span>
+          <div class="avail-row-times">
+            {{ timepicker('avail_' + day + '_start', r.start) }}
+            <span class="avail-row-dash">&ndash;</span>
+            {{ timepicker('avail_' + day + '_end', r.end) }}
+          </div>
+          <span class="avail-row-closed">Not working</span>
+          <button type="button" class="avail-toggle" role="switch" aria-checked="{{ 'true' if r.open else 'false' }}" onclick="toggleDayOpen(this)">
+            <span class="avail-toggle-track"><span class="avail-toggle-knob"></span></span>
+            <span class="avail-toggle-text">{{ 'Available' if r.open else 'Closed' }}</span>
+          </button>
+        </div>
+        {% endfor %}
+      </div>
+
+      <div class="btn-group">
+        <button class="btn btn-secondary" onclick="copyMondayToAll()"><i class="ti ti-copy"></i> Copy Monday to all days</button>
+        <button class="btn btn-primary" onclick="saveAvailability()">Save Availability</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 8. Invoicing -->
 {% if m.invoicing %}
 {% set inv = settings.invoicing if settings.invoicing else {} %}
-<div class="card">
-  <div class="card-title">Invoicing Details</div>
-  <p class="note">Appears on the invoices you generate.</p>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">ABN</label>
-      <input type="text" id="inv_abn" class="form-input" value="{{ inv.coach_abn or '' }}">
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('invoicing')">
+    <span class="acc-title"><i class="ti ti-file-invoice"></i> Invoicing</span>
+    <span class="acc-sub">ABN &amp; bank details</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-invoicing">
+    <div class="acc-body-inner">
+      <p class="note">Appears on the invoices you generate.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">ABN</label>
+          <input type="text" id="inv_abn" class="form-input" inputmode="numeric" maxlength="14" placeholder="XX XXX XXX XXX" value="{{ inv.coach_abn or '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Business address</label>
+          <input type="text" id="inv_address" class="form-input" value="{{ inv.coach_address or '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Bank name</label>
+          <input type="text" id="inv_bank_name" class="form-input" value="{{ inv.bank_name or '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">BSB</label>
+          <input type="text" id="inv_bsb" class="form-input" value="{{ inv.bank_bsb or '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Account number</label>
+          <input type="text" id="inv_account" class="form-input" value="{{ inv.bank_account or '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Invoice prefix</label>
+          <input type="text" id="inv_prefix" class="form-input" value="{{ inv.invoice_prefix or 'INV' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Payment terms (days)</label>
+          {{ stepper('inv_terms', inv.payment_terms_days or 7, '0', '', '1') }}
+        </div>
+      </div>
+      <label class="toggle-row">
+        <span class="toggle-label">Registered for GST (10% added to invoices)</span>
+        <span class="toggle-switch"><input type="checkbox" id="inv_gst" {{ 'checked' if inv.gst_registered else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveInvoicing()">Save Invoicing</button>
+      </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Business address</label>
-      <input type="text" id="inv_address" class="form-input" value="{{ inv.coach_address or '' }}">
-    </div>
-  </div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Bank name</label>
-      <input type="text" id="inv_bank_name" class="form-input" value="{{ inv.bank_name or '' }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">BSB</label>
-      <input type="text" id="inv_bsb" class="form-input" value="{{ inv.bank_bsb or '' }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Account number</label>
-      <input type="text" id="inv_account" class="form-input" value="{{ inv.bank_account or '' }}">
-    </div>
-  </div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Invoice prefix</label>
-      <input type="text" id="inv_prefix" class="form-input" value="{{ inv.invoice_prefix or 'INV' }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Payment terms (days)</label>
-      <input type="number" min="0" id="inv_terms" class="form-input" value="{{ inv.payment_terms_days or 7 }}">
-    </div>
-  </div>
-  <div class="form-group checkbox-row">
-    <input type="checkbox" id="inv_gst" {{ 'checked' if inv.gst_registered else '' }}>
-    <label class="form-label" for="inv_gst" style="margin:0;">Registered for GST (10% added to invoices)</label>
-  </div>
-  <div class="btn-group">
-    <button class="btn btn-primary" onclick="saveInvoicing()">Save Invoicing</button>
   </div>
 </div>
 {% endif %}
 
-<!-- 7. Tax (module-gated) -->
+<!-- 9. Tax -->
 {% if m.tax_estimator %}
 {% set tax = settings.tax if settings.tax else {} %}
-<div class="card">
-  <div class="card-title">Tax Assumptions</div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Other income ($/yr)</label>
-      <input type="number" step="0.01" id="tax_other_income" class="form-input" value="{{ tax.other_income or 0 }}">
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('tax')">
+    <span class="acc-title"><i class="ti ti-calculator"></i> Tax</span>
+    <span class="acc-sub">Assumptions</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-tax">
+    <div class="acc-body-inner">
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Other income ($/yr)</label>
+          {{ stepper('tax_other_income', tax.other_income or 0, '0', '', '100') }}
+        </div>
+      </div>
+      <label class="toggle-row">
+        <span class="toggle-label">HELP/HECS debt <span class="note">(coming soon)</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="tax_help" {{ 'checked' if tax.has_help_debt else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <label class="toggle-row">
+        <span class="toggle-label">Private health cover <span class="note">(coming soon)</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="tax_health" {{ 'checked' if tax.has_private_health else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveTaxAssumptions()">Save Tax Assumptions</button>
+      </div>
     </div>
-  </div>
-  <div class="form-group checkbox-row">
-    <input type="checkbox" id="tax_help" {{ 'checked' if tax.has_help_debt else '' }}>
-    <label class="form-label" for="tax_help" style="margin:0;">HELP/HECS debt</label>
-  </div>
-  <div class="form-group checkbox-row">
-    <input type="checkbox" id="tax_health" {{ 'checked' if tax.has_private_health else '' }}>
-    <label class="form-label" for="tax_health" style="margin:0;">Private health cover</label>
-  </div>
-  <div class="btn-group">
-    <button class="btn btn-primary" onclick="saveTaxAssumptions()">Save Tax Assumptions</button>
   </div>
 </div>
 {% endif %}
 
-<!-- 8. SMS / Twilio (module-gated) -->
+<!-- 10. SMS / Twilio -->
 {% if m.sms %}
 {% set tw = settings.twilio if settings.twilio else {} %}
-<div class="card">
-  <div class="card-title">Twilio SMS Setup</div>
-  <p class="note">Connect a Twilio account so Ivan can text your students. SMS cost: approximately $0.08 AUD per message.</p>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Account SID</label>
-      <input type="text" id="tw_sid" class="form-input" value="{{ tw.account_sid or '' }}">
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('sms')">
+    <span class="acc-title"><i class="ti ti-message"></i> SMS / Twilio</span>
+    <span class="acc-sub">Texting credentials</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-sms">
+    <div class="acc-body-inner">
+      <p class="note">Connect a Twilio account so Ivan can text your students. SMS cost: approximately $0.08 AUD per message.</p>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Account SID</label>
+          <input type="text" id="tw_sid" class="form-input" value="{{ tw.account_sid or '' }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Auth Token</label>
+          <input type="password" id="tw_token" class="form-input" value="{{ tw.auth_token or '' }}">
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">From Number</label>
+          <input type="text" id="tw_from" class="form-input" placeholder="+61480123456" value="{{ tw.from_number or '' }}">
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveTwilio()">Save</button>
+        <button class="btn btn-secondary" onclick="testTwilio()">Test Connection</button>
+      </div>
+      <div id="twilio-result" class="test-result"></div>
+      <div class="note" style="margin-top:14px;">
+        How to get started:<br>
+        1. Sign up at twilio.com (free trial available)<br>
+        2. Get an Australian phone number (~$2/month)<br>
+        3. Copy your Account SID and Auth Token from the Twilio Console<br>
+        4. Paste them above and click Test Connection
+      </div>
     </div>
-    <div class="form-group">
-      <label class="form-label">Auth Token</label>
-      <input type="password" id="tw_token" class="form-input" value="{{ tw.auth_token or '' }}">
-    </div>
-  </div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">From Number</label>
-      <input type="text" id="tw_from" class="form-input" placeholder="+61480123456" value="{{ tw.from_number or '' }}">
-    </div>
-  </div>
-  <div class="btn-group">
-    <button class="btn btn-primary" onclick="saveTwilio()">Save</button>
-    <button class="btn btn-secondary" onclick="testTwilio()">Test Connection</button>
-  </div>
-  <div id="twilio-result" class="test-result"></div>
-  <div class="note" style="margin-top:14px;">
-    How to get started:<br>
-    1. Sign up at twilio.com (free trial available)<br>
-    2. Get an Australian phone number (~$2/month)<br>
-    3. Copy your Account SID and Auth Token from the Twilio Console<br>
-    4. Paste them above and click Test Connection
   </div>
 </div>
 {% endif %}
 
-<!-- 9. Facebook / Lead Monitor -->
-<div class="settings-section-head">
-  <h2 class="section-title"><i class="ti ti-brand-facebook"></i> Facebook / Lead Monitor</h2>
-</div>
+<!-- 11. Facebook / Lead Monitor -->
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('facebook')">
+    <span class="acc-title"><i class="ti ti-brand-facebook"></i> Facebook / Lead Monitor</span>
+    <span class="acc-sub">Bot &amp; session</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-facebook">
+    <div class="acc-body-inner">
+      <div class="card-title">Bot Settings</div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Scan Interval (minutes)</label>
+          {{ stepper('scan_interval_minutes', settings.scan_interval_minutes, '1', '', '1') }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Daily Limit</label>
+          {{ stepper('daily_limit', settings.daily_limit, '1', '', '1') }}
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Active Hours Start</label>
+          {{ timepicker('active_hours_start', settings.active_hours_start) }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Active Hours End</label>
+          {{ timepicker('active_hours_end', settings.active_hours_end) }}
+        </div>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Min Delay (seconds)</label>
+          {{ stepper('min_delay_seconds', settings.min_delay_seconds, '0', '', '0.5') }}
+        </div>
+        <div class="form-group">
+          <label class="form-label">Max Delay (seconds)</label>
+          {{ stepper('max_delay_seconds', settings.max_delay_seconds, '0', '', '0.5') }}
+        </div>
+      </div>
+      <label class="toggle-row">
+        <span class="toggle-label">Headless mode (run browser hidden)</span>
+        <span class="toggle-switch"><input type="checkbox" id="headless_mode" {{ 'checked' if settings.headless_mode else '' }}><span class="toggle-slider"></span></span>
+      </label>
 
-<div class="card">
-  <div class="card-title">Bot Settings</div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Scan Interval (minutes)</label>
-      <input type="number" min="1" id="scan_interval_minutes" class="form-input" value="{{ settings.scan_interval_minutes }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Daily Limit</label>
-      <input type="number" min="1" id="daily_limit" class="form-input" value="{{ settings.daily_limit }}">
-    </div>
-  </div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Active Hours Start</label>
-      <input type="time" id="active_hours_start" class="form-input" value="{{ settings.active_hours_start }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Active Hours End</label>
-      <input type="time" id="active_hours_end" class="form-input" value="{{ settings.active_hours_end }}">
-    </div>
-  </div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Min Delay (seconds)</label>
-      <input type="number" min="0" step="0.5" id="min_delay_seconds" class="form-input" value="{{ settings.min_delay_seconds }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Max Delay (seconds)</label>
-      <input type="number" min="0" step="0.5" id="max_delay_seconds" class="form-input" value="{{ settings.max_delay_seconds }}">
-    </div>
-  </div>
-  <div class="form-group checkbox-row">
-    <input type="checkbox" id="headless_mode" {{ 'checked' if settings.headless_mode else '' }}>
-    <label class="form-label" for="headless_mode" style="margin:0;">Headless mode (run browser hidden)</label>
-  </div>
-</div>
+      <div class="card-title" style="margin-top:18px;">Facebook Session</div>
+      <p class="text-muted">Log in once to save your Facebook session. The bot reuses it for scanning.</p>
+      <div class="flex gap-1 center wrap mb-1">
+        <span class="session-indicator">
+          Status:
+          {% if session_status == 'set' %}
+            <span class="badge badge-replied">SAVED</span>
+          {% else %}
+            <span class="badge badge-ignored">NOT SET</span>
+          {% endif %}
+        </span>
+      </div>
+      <div class="session-info">
+        <div class="session-info-row">
+          <span class="session-info-label">Last login</span>
+          <span class="session-info-value">{{ session_created_at | datetimefmt if session_created_at else '—' }}</span>
+        </div>
+        <div class="session-info-row">
+          <span class="session-info-label">Estimated expiry</span>
+          <span class="session-info-value">{{ session_expiry | datetimefmt if session_expiry else '—' }}{% if session_expiry %} <span class="text-muted">(~30 days)</span>{% endif %}</span>
+        </div>
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="loginFacebook()">Login to Facebook</button>
+        <button class="btn btn-secondary" onclick="loginFacebook()">Re-login</button>
+        <button class="btn btn-secondary" onclick="testSession()">Test Session</button>
+      </div>
+      <div id="session-result" class="mt-1"></div>
 
-<div class="card">
-  <div class="card-title">Facebook Session</div>
-  <p class="text-muted">Log in once to save your Facebook session. The bot reuses it for scanning.</p>
-  <div class="flex gap-1 center wrap mb-1">
-    <span class="session-indicator">
-      Status:
-      {% if session_status == 'set' %}
-        <span class="badge badge-replied">SAVED</span>
-      {% else %}
-        <span class="badge badge-ignored">NOT SET</span>
-      {% endif %}
-    </span>
-  </div>
-
-  <div class="session-info">
-    <div class="session-info-row">
-      <span class="session-info-label">Last login</span>
-      <span class="session-info-value">{{ session_created_at | datetimefmt if session_created_at else '—' }}</span>
-    </div>
-    <div class="session-info-row">
-      <span class="session-info-label">Estimated expiry</span>
-      <span class="session-info-value">{{ session_expiry | datetimefmt if session_expiry else '—' }}{% if session_expiry %} <span class="text-muted">(~30 days)</span>{% endif %}</span>
-    </div>
-  </div>
-
-  <div class="btn-group">
-    <button class="btn btn-primary" onclick="loginFacebook()">Login to Facebook</button>
-    <button class="btn btn-secondary" onclick="loginFacebook()">Re-login</button>
-    <button class="btn btn-secondary" onclick="testSession()">Test Session</button>
-  </div>
-  <div id="session-result" class="mt-1"></div>
-</div>
-
-<div class="card">
-  <div class="card-title"><i class="ti ti-bolt"></i> Start with Windows</div>
-  <p class="note">Launch Ivan automatically when your PC turns on. (Windows only.)</p>
-  <div class="btn-group">
-    <button class="btn btn-primary" onclick="enableStartup()">Start automatically when Windows starts</button>
-    <button class="btn btn-secondary" onclick="disableStartup()">Remove from startup</button>
-  </div>
-  <div class="mt-1">
-    <span class="text-muted">Currently:</span>
-    <span class="badge {{ 'badge-replied' if startup_enabled else 'badge-ignored' }}" id="startup-status">{{ 'ENABLED' if startup_enabled else 'DISABLED' }}</span>
-  </div>
-</div>
-
-<!-- 10. AI Assistant -->
-<div class="settings-section-head">
-  <h2 class="section-title"><i class="ti ti-sparkles"></i> AI Assistant</h2>
-</div>
-
-<div class="card">
-  <div class="card-title"><i class="ti ti-sparkles"></i> AI Assistant</div>
-  <p class="note">Optional. Add an Anthropic API key to enable AI summaries and insights. Saved with Coach Settings.</p>
-  <div class="form-group">
-    <label class="form-label">Anthropic API Key</label>
-    <input type="password" id="anthropic_api_key" class="form-input" placeholder="sk-ant-…" value="{{ settings.anthropic_api_key }}">
-  </div>
-  <div class="btn-group">
-    <button class="btn btn-primary" onclick="saveCoachSettings()">Save</button>
-    <button class="btn btn-secondary" onclick="testAI()"><i class="ti ti-wand"></i> Test AI</button>
-  </div>
-  <div id="ai-test-result" class="mt-1"></div>
-</div>
-
-<!-- 11. Notifications -->
-<div class="settings-section-head">
-  <h2 class="section-title"><i class="ti ti-bell"></i> Notifications</h2>
-</div>
-
-<div class="card">
-  <div class="card-title">Email Notifications</div>
-  <div class="form-group checkbox-row">
-    <input type="checkbox" id="email_notifications" {{ 'checked' if settings.email_notifications else '' }}>
-    <label class="form-label" for="email_notifications" style="margin:0;">Send email notifications for new leads</label>
-  </div>
-  <div class="form-row">
-    <div class="form-group">
-      <label class="form-label">Email Address</label>
-      <input type="email" id="email_address" class="form-input" value="{{ settings.email_address }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">SMTP Server (host:port)</label>
-      <input type="text" id="email_smtp" class="form-input" placeholder="smtp.gmail.com:587" value="{{ settings.email_smtp }}">
-    </div>
-    <div class="form-group">
-      <label class="form-label">Email Password</label>
-      <input type="password" id="email_password" class="form-input" value="{{ settings.email_password }}">
+      <div class="card-title" style="margin-top:18px;"><i class="ti ti-bolt"></i> Start with Windows</div>
+      <p class="note">Launch Ivan automatically when your PC turns on. (Windows only.)</p>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="enableStartup()">Start automatically when Windows starts</button>
+        <button class="btn btn-secondary" onclick="disableStartup()">Remove from startup</button>
+      </div>
+      <div class="mt-1">
+        <span class="text-muted">Currently:</span>
+        <span class="badge {{ 'badge-replied' if startup_enabled else 'badge-ignored' }}" id="startup-status">{{ 'ENABLED' if startup_enabled else 'DISABLED' }}</span>
+      </div>
     </div>
   </div>
 </div>
 
-<div class="card">
-  <div class="card-title"><i class="ti ti-bell"></i> Push Notifications</div>
-  <div class="form-group checkbox-row">
-    <input type="checkbox" id="push_notifications_enabled" {{ 'checked' if settings.push_notifications_enabled else '' }}>
-    <label class="form-label" for="push_notifications_enabled" style="margin:0;">Enable lesson reminders &amp; weather alerts</label>
+<!-- 12. AI Assistant -->
+{% set ai = settings.ai if settings.ai else {} %}
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('ai')">
+    <span class="acc-title"><i class="ti ti-sparkles"></i> AI Assistant</span>
+    <span class="acc-sub">GroqCloud (optional)</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-ai">
+    <div class="acc-body-inner">
+      <p class="note">Connect GroqCloud to unlock helpful extras. Everything in Ivan works without this — it's just a bonus.</p>
+      <ul class="ai-feature-list">
+        <li><i class="ti ti-circle-check"></i> Plain-English summaries of your week and earnings</li>
+        <li><i class="ti ti-circle-check"></i> Auto-drafted SMS messages (reschedules, reminders)</li>
+        <li><i class="ti ti-circle-check"></i> Quick student progress summaries</li>
+      </ul>
+      <div class="form-group">
+        <label class="form-label">GroqCloud API Key</label>
+        <input type="password" id="groq_api_key" class="form-input" placeholder="gsk_…" value="{{ ai.groq_api_key or '' }}">
+      </div>
+      <label class="toggle-row">
+        <span class="toggle-label">Enable AI features</span>
+        <span class="toggle-switch"><input type="checkbox" id="ai_enabled" {{ 'checked' if ai.enabled else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <div class="btn-group">
+        <button class="btn btn-primary" onclick="saveAI()">Save</button>
+        <button class="btn btn-secondary" onclick="testAI()"><i class="ti ti-wand"></i> Test Connection</button>
+      </div>
+      <div id="ai-test-result" class="mt-1"></div>
+      <div class="ai-help-steps">
+        <strong>How to get a free key:</strong><br>
+        1. Go to <a href="https://console.groq.com" target="_blank" rel="noopener">console.groq.com</a><br>
+        2. Sign up free (no credit card needed)<br>
+        3. Create an API key and paste it above
+      </div>
+    </div>
   </div>
-  <div class="form-group">
-    <label class="form-label">Notification contact email</label>
-    <input type="email" id="vapid_claim_email" class="form-input" placeholder="mailto:coach@example.com" value="{{ settings.vapid_claim_email }}">
-  </div>
-  <div class="btn-group">
-    <button class="btn btn-secondary" onclick="enablePush()"><i class="ti ti-device-mobile"></i> Enable on this device</button>
-    <button class="btn btn-secondary" onclick="testPush()">Send Test</button>
-  </div>
-  <div id="push-result" class="mt-1"></div>
-  <p class="note">To install as an app: open <strong id="local-ip-line">this dashboard</strong> on your phone, then use your browser's "Add to Home Screen" option.</p>
 </div>
 
-<!-- 12. Data & Setup -->
-<div class="settings-section-head">
-  <h2 class="section-title"><i class="ti ti-database"></i> Data &amp; Setup</h2>
-</div>
+<!-- 13. Notifications -->
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('notifications')">
+    <span class="acc-title"><i class="ti ti-bell"></i> Notifications</span>
+    <span class="acc-sub">Email &amp; push</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-notifications">
+    <div class="acc-body-inner">
+      <div class="card-title">Email Notifications</div>
+      <label class="toggle-row">
+        <span class="toggle-label">Send email notifications for new leads</span>
+        <span class="toggle-switch"><input type="checkbox" id="email_notifications" {{ 'checked' if settings.email_notifications else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input type="email" id="email_address" class="form-input" value="{{ settings.email_address }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">SMTP Server (host:port)</label>
+          <input type="text" id="email_smtp" class="form-input" placeholder="smtp.gmail.com:587" value="{{ settings.email_smtp }}">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Password</label>
+          <input type="password" id="email_password" class="form-input" value="{{ settings.email_password }}">
+        </div>
+      </div>
 
-<div class="card">
-  <div class="card-title">Data</div>
-  <p class="note">Export your data or re-run the first-time setup wizard.</p>
-  <div class="btn-group">
-    <a class="btn btn-secondary" href="/leads/export"><i class="ti ti-download"></i> Export Leads (CSV)</a>
-    <a class="btn btn-secondary" href="/api/earnings/export"><i class="ti ti-download"></i> Export Earnings (CSV)</a>
+      <div class="card-title" style="margin-top:18px;"><i class="ti ti-bell"></i> Push Notifications</div>
+      <label class="toggle-row">
+        <span class="toggle-label">Enable lesson reminders &amp; weather alerts</span>
+        <span class="toggle-switch"><input type="checkbox" id="push_notifications_enabled" {{ 'checked' if settings.push_notifications_enabled else '' }}><span class="toggle-slider"></span></span>
+      </label>
+      <div class="form-group">
+        <label class="form-label">Notification contact email</label>
+        <input type="email" id="vapid_claim_email" class="form-input" placeholder="mailto:coach@example.com" value="{{ settings.vapid_claim_email }}">
+      </div>
+      <div class="btn-group">
+        <button class="btn btn-secondary" onclick="enablePush()"><i class="ti ti-device-mobile"></i> Enable on this device</button>
+        <button class="btn btn-secondary" onclick="testPush()">Send Test</button>
+        <button class="btn btn-primary" onclick="saveCoachSettings()">Save</button>
+      </div>
+      <div id="push-result" class="mt-1"></div>
+      <p class="note">To install as an app: open <strong id="local-ip-line">this dashboard</strong> on your phone, then use your browser's "Add to Home Screen" option.</p>
+    </div>
   </div>
 </div>
 
-<div class="card setup-card">
-  <div class="card-title"><i class="ti ti-compass"></i> Setup Wizard</div>
-  <p style="color: rgba(255,255,255,0.5); font-size: 14px; margin-bottom: 16px;">
-    Re-run the setup wizard to reconfigure your account, groups, and keywords from scratch.
-  </p>
-  <button class="btn btn-secondary" onclick="resetOnboarding()">Re-run Setup Wizard</button>
+<!-- 14. Help & Guides -->
+{% set h = settings.help if settings.help else {} %}
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('help')">
+    <span class="acc-title"><i class="ti ti-help"></i> Help &amp; Guides</span>
+    <span class="acc-sub">Tours &amp; tips</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-help">
+    <div class="acc-body-inner">
+      <div class="card-title">Help Display</div>
+      <label class="toggle-row">
+        <span class="toggle-label"><strong>Show Help Button on all pages</strong><br><span class="note">The Help button in page headers.</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="help-show-button" {{ 'checked' if h.get('show_help_button', True) else '' }} onchange="saveHelpPrefs()"><span class="toggle-slider"></span></span>
+      </label>
+      <label class="toggle-row">
+        <span class="toggle-label"><strong>Show Setup Tips for new features</strong><br><span class="note">Prompts when you use a feature for the first time.</span></span>
+        <span class="toggle-switch"><input type="checkbox" id="help-show-tips" {{ 'checked' if h.get('show_feature_tips', True) else '' }} onchange="saveHelpPrefs()"><span class="toggle-slider"></span></span>
+      </label>
+
+      <div class="card-title" style="margin-top:18px;">Guided Tours</div>
+      <p class="note">Take a walkthrough to learn how to use Ivan.</p>
+      <div class="tour-list" id="tour-list"></div>
+      <div class="btn-group">
+        <button class="btn btn-secondary" onclick="resetAllTours()"><i class="ti ti-refresh"></i> Reset all tours</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 15. Backup & Data -->
+<div class="settings-accordion">
+  <button class="acc-header" onclick="toggleSection('data')">
+    <span class="acc-title"><i class="ti ti-database"></i> Backup &amp; Data</span>
+    <span class="acc-sub">Backup, export, setup</span>
+    <i class="ti ti-chevron-down acc-chevron"></i>
+  </button>
+  <div class="acc-body" id="acc-data">
+    <div class="acc-body-inner">
+      <div class="card-title">Data</div>
+      <p class="note">Export your data or re-run the first-time setup wizard.</p>
+      <div class="btn-group">
+        <a class="btn btn-secondary" href="/leads/export"><i class="ti ti-download"></i> Export Leads (CSV)</a>
+        <a class="btn btn-secondary" href="/api/earnings/export"><i class="ti ti-download"></i> Export Earnings (CSV)</a>
+      </div>
+
+      <div class="card-title" style="margin-top:18px;"><i class="ti ti-database"></i> Data Backup</div>
+      <p class="note" id="backup-status-line">Last backup: checking…</p>
+      <div class="btn-group">
+        <a class="btn btn-primary" href="/api/backup/download" onclick="onBackupDownload()"><i class="ti ti-download"></i> Download Backup Now</a>
+        <button class="btn btn-secondary" onclick="document.getElementById('backup-file').click()"><i class="ti ti-upload"></i> Restore from Backup</button>
+        <input type="file" id="backup-file" accept=".zip" hidden onchange="restoreBackup(this)">
+      </div>
+      <p class="note">Downloads <strong>ivan_backup_YYYY-MM-DD.zip</strong> — save it to a USB stick or your Desktop.</p>
+      <div id="backup-result" class="mt-1"></div>
+      <p class="note" style="margin-top:14px;">
+        <strong>Important:</strong> Your backup contains all your student and financial data, including API keys. Keep it somewhere safe and private.
+      </p>
+
+      <div class="card-title" style="margin-top:18px;"><i class="ti ti-compass"></i> Setup Wizard</div>
+      <p class="note">Re-run the setup wizard to reconfigure your account, groups, and keywords from scratch.</p>
+      <div class="btn-group">
+        <button class="btn btn-secondary" onclick="resetOnboarding()">Re-run Setup Wizard</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 {% endblock %}
@@ -462,8 +661,117 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='coach.js') }}"></script>
 <script>
+// ===== Accordion =====
+function toggleSection(id) {
+  const body = document.getElementById('acc-' + id);
+  if (!body) return;
+  const header = body.previousElementSibling;
+  const isOpen = body.classList.toggle('open');
+  if (header) header.classList.toggle('open', isOpen);
+  const states = JSON.parse(localStorage.getItem('ivan_settings_sections') || '{}');
+  states[id] = isOpen;
+  localStorage.setItem('ivan_settings_sections', JSON.stringify(states));
+}
+
+function filterSettings(q) {
+  q = (q || '').toLowerCase();
+  document.querySelectorAll('.settings-accordion').forEach(acc => {
+    const title = acc.querySelector('.acc-title').textContent.toLowerCase();
+    const sub = acc.querySelector('.acc-sub') ? acc.querySelector('.acc-sub').textContent.toLowerCase() : '';
+    acc.style.display = (title.includes(q) || sub.includes(q)) ? '' : 'none';
+  });
+}
+
+// ===== Number stepper =====
+function stepNumber(btn, dir) {
+  const input = btn.parentElement.querySelector('input');
+  const step = parseFloat(input.step) || 1;
+  const min = input.min !== '' ? parseFloat(input.min) : -Infinity;
+  const max = input.max !== '' ? parseFloat(input.max) : Infinity;
+  let val = (parseFloat(input.value) || 0) + dir * step;
+  val = Math.max(min, Math.min(max, val));
+  val = Math.round(val * 100) / 100;
+  input.value = val;
+  input.dispatchEvent(new Event('change'));
+}
+
+// ===== Availability (per-day start/end ranges) =====
+const AVAIL_DAYS = ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'];
+
+function _availTime(day, which) {
+  const tp = document.querySelector(`.time-picker[data-name="avail_${day}_${which}"] .tp-input`);
+  return tp ? tp.value : '07:00';
+}
+function toggleDayOpen(btn) {
+  const row = btn.closest('.avail-row');
+  const open = row.classList.toggle('is-closed') === false; // toggled on => now closed=false
+  btn.setAttribute('aria-checked', open ? 'true' : 'false');
+  const txt = btn.querySelector('.avail-toggle-text');
+  if (txt) txt.textContent = open ? 'Available' : 'Closed';
+}
+function collectRanges() {
+  const ranges = {};
+  AVAIL_DAYS.forEach(day => {
+    const row = document.querySelector(`.avail-row[data-day="${day}"]`);
+    ranges[day] = {
+      open: row ? !row.classList.contains('is-closed') : false,
+      start: _availTime(day, 'start'),
+      end: _availTime(day, 'end'),
+    };
+  });
+  return ranges;
+}
+function applyRangesToRows(ranges) {
+  AVAIL_DAYS.forEach(day => {
+    const r = ranges[day]; if (!r) return;
+    const row = document.querySelector(`.avail-row[data-day="${day}"]`);
+    if (!row) return;
+    setTimePickerValue(`avail_${day}_start`, r.start || '07:00');
+    setTimePickerValue(`avail_${day}_end`, r.end || '19:00');
+    row.classList.toggle('is-closed', !r.open);
+    const btn = row.querySelector('.avail-toggle');
+    if (btn) {
+      btn.setAttribute('aria-checked', r.open ? 'true' : 'false');
+      const txt = btn.querySelector('.avail-toggle-text');
+      if (txt) txt.textContent = r.open ? 'Available' : 'Closed';
+    }
+  });
+}
+function copyMondayToAll() {
+  const mon = { open: !document.querySelector('.avail-row[data-day="monday"]').classList.contains('is-closed'),
+                start: _availTime('monday', 'start'), end: _availTime('monday', 'end') };
+  const ranges = {};
+  AVAIL_DAYS.forEach(day => { ranges[day] = { open: mon.open, start: mon.start, end: mon.end }; });
+  applyRangesToRows(ranges);
+  Coach.toast('Copied Monday to all days', 'info');
+}
+async function saveAvailability() {
+  try { await Coach.postJSON('/api/availability/save', { ranges: collectRanges() }); Coach.toast('Availability saved', 'success'); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function applyPreset(id) {
+  try { const r = await Coach.postJSON('/api/availability/apply-preset', { preset_id: id }); applyRangesToRows(r.ranges || {}); Coach.toast('Preset applied', 'success'); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function saveCustomPreset() {
+  const name = prompt('Name this preset:');
+  if (!name || !name.trim()) return;
+  try { await Coach.postJSON('/api/availability/save-preset', { name: name.trim(), ranges: collectRanges() }); Coach.toast('Preset saved', 'success'); setTimeout(() => location.reload(), 500); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function deleteCustomPreset(name) {
+  if (!await Coach.confirm({ title: 'Delete preset?', message: `Delete "${name}"?`, confirmText: 'Delete', cancelText: 'Keep' })) return;
+  try { await Coach.del('/api/availability/preset/' + encodeURIComponent(name)); Coach.toast('Preset deleted', 'info'); setTimeout(() => location.reload(), 400); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+
+// ===== Coach / core settings =====
+async function saveSettings() { await saveCoachSettings(); }
+
 async function saveCoachSettings() {
   const body = {
+    user_title: document.getElementById('user_title').value,
+    user_name: document.getElementById('user_name').value,
     coach_title: document.getElementById('coach_title').value,
     coach_name: document.getElementById('coach_name').value,
     court_name: document.getElementById('court_name').value,
@@ -473,19 +781,141 @@ async function saveCoachSettings() {
     working_hours_start: document.getElementById('working_hours_start').value,
     working_hours_end: document.getElementById('working_hours_end').value,
     lights_warning_minutes: document.getElementById('lights_warning_minutes').value,
-    anthropic_api_key: document.getElementById('anthropic_api_key').value,
     vapid_claim_email: document.getElementById('vapid_claim_email').value,
     push_notifications_enabled: document.getElementById('push_notifications_enabled').checked,
-    lesson_prices: {
-      '30min': document.getElementById('price_30min').value,
-      '60min': document.getElementById('price_60min').value,
-      '90min': document.getElementById('price_90min').value,
-      '120min': document.getElementById('price_120min').value,
+    pricing: {
+      duration_prices: {
+        '30': document.getElementById('price_30min').value,
+        '60': document.getElementById('price_60min').value,
+        '90': document.getElementById('price_90min').value,
+        '120': document.getElementById('price_120min').value,
+      },
+      presets: _presets,
     },
   };
-  try { await Coach.postJSON('/api/settings/save', body); Coach.toast('Coach settings saved', 'success'); }
+  try {
+    await Coach.postJSON('/api/settings/save', body);
+    window.PRICE_PRESETS = _presets;
+    window.DURATION_PRICES = Object.assign({}, window.DURATION_PRICES, body.pricing.duration_prices);
+    Coach.toast('Settings saved', 'success');
+  }
   catch (e) { Coach.toast(e.message, 'error'); }
 }
+
+// ===== Price presets editor =====
+let _presets = (window.PRICE_PRESETS || []).slice();
+function renderPresets() {
+  const wrap = document.getElementById('preset-list');
+  if (!wrap) return;
+  if (!_presets.length) {
+    wrap.innerHTML = '<div class="note">No presets yet — add one below.</div>';
+    return;
+  }
+  wrap.innerHTML = _presets.map((p, i) =>
+    `<span class="preset-chip">${p.name} $${p.amount}<button type="button" onclick="removePreset(${i})" aria-label="Remove">&times;</button></span>`).join('');
+}
+function addPreset() {
+  const nameEl = document.getElementById('preset-new-name');
+  const amtEl = document.getElementById('preset-new-amount');
+  const name = (nameEl.value || '').trim();
+  const amount = Number(amtEl.value || 0);
+  if (!name) { Coach.toast('Preset name required', 'error'); return; }
+  if (!amount || amount <= 0) { Coach.toast('Enter a price', 'error'); return; }
+  _presets.push({ name, amount });
+  nameEl.value = ''; amtEl.value = '';
+  renderPresets();
+}
+function removePreset(i) {
+  _presets.splice(i, 1);
+  renderPresets();
+}
+document.addEventListener('DOMContentLoaded', renderPresets);
+
+// ===== AI (GroqCloud) =====
+async function saveAI() {
+  const body = {
+    groq_api_key: document.getElementById('groq_api_key').value.trim(),
+    enabled: document.getElementById('ai_enabled').checked,
+  };
+  try { await Coach.postJSON('/api/settings/ai', body); Coach.toast('AI settings saved', 'success'); }
+  catch (e) { Coach.toast(e.message, 'error'); }
+}
+async function testAI() {
+  const box = document.getElementById('ai-test-result');
+  box.textContent = 'Testing…';
+  try {
+    const res = await Coach.postJSON('/api/ai/test', { groq_api_key: document.getElementById('groq_api_key').value.trim() });
+    box.innerHTML = `<span class="badge badge-replied">OK</span> ${res.message}`;
+  } catch (e) { box.innerHTML = `<span class="badge badge-ignored">FAILED</span> ${e.message}`; }
+}
+
+// --- ABN auto-formatter (XX XXX XXX XXX) -----------------------------------
+(function initAbnFormatter() {
+  const el = document.getElementById('inv_abn');
+  if (!el) return;
+  function format() {
+    const digits = el.value.replace(/\D/g, '').slice(0, 11);
+    const parts = [];
+    if (digits.length > 0) parts.push(digits.slice(0, 2));
+    if (digits.length > 2) parts.push(digits.slice(2, 5));
+    if (digits.length > 5) parts.push(digits.slice(5, 8));
+    if (digits.length > 8) parts.push(digits.slice(8, 11));
+    el.value = parts.join(' ');
+  }
+  el.addEventListener('input', format);
+  format();
+})();
+
+// --- Location autocomplete -------------------------------------------------
+(function initLocationSearch() {
+  const input = document.getElementById('location_search');
+  const dropdown = document.getElementById('location_results');
+  if (!input || !dropdown) return;
+  let timer = null;
+
+  function hide() { dropdown.hidden = true; dropdown.innerHTML = ''; }
+
+  async function search(q) {
+    let results = [];
+    try { results = await Coach.getJSON('/api/geocode?q=' + encodeURIComponent(q)); }
+    catch (e) { hide(); return; }
+    if (!results.length) { hide(); return; }
+    dropdown.innerHTML = '';
+    results.slice(0, 8).forEach(r => {
+      const item = document.createElement('div');
+      item.className = 'location-option';
+      item.textContent = r.display;
+      item.addEventListener('click', () => selectLocation(r));
+      dropdown.appendChild(item);
+    });
+    dropdown.hidden = false;
+  }
+
+  async function selectLocation(r) {
+    document.getElementById('latitude').value = r.lat;
+    document.getElementById('longitude').value = r.lon;
+    input.value = r.display;
+    document.getElementById('location_current').textContent = r.display;
+    hide();
+    try {
+      await Coach.postJSON('/api/settings/location', {
+        location: r.display, latitude: r.lat, longitude: r.lon,
+      });
+      const short = [r.name, r.admin1].filter(Boolean).join(', ') || r.display;
+      Coach.toast('Location saved: ' + short, 'success');
+    } catch (e) { Coach.toast(e.message, 'error'); }
+  }
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim();
+    clearTimeout(timer);
+    if (q.length < 3) { hide(); return; }
+    timer = setTimeout(() => search(q), 300);
+  });
+  document.addEventListener('click', (e) => {
+    if (e.target !== input && !dropdown.contains(e.target)) hide();
+  });
+})();
 
 async function testWeather() {
   const box = document.getElementById('weather-test-result');
@@ -498,13 +928,6 @@ async function testWeather() {
     const w = res.weather || {};
     box.innerHTML = `<span class="badge badge-replied">OK</span> ${w.temp_c}&deg; ${w.condition}, wind ${w.wind_kmh} km/h, sunset ${Coach.to12h(w.sunset_time)}`;
   } catch (e) { box.innerHTML = `<span class="badge badge-ignored">FAILED</span> ${e.message}`; }
-}
-
-async function testAI() {
-  const box = document.getElementById('ai-test-result');
-  box.textContent = 'Testing…';
-  try { const res = await Coach.postJSON('/api/settings/test-ai', {}); box.innerHTML = `<span class="badge badge-replied">OK</span> ${res.message}`; }
-  catch (e) { box.innerHTML = `<span class="badge badge-ignored">FAILED</span> ${e.message}`; }
 }
 
 function urlBase64ToUint8Array(base64String) {
@@ -610,14 +1033,96 @@ async function saveTaxAssumptions() {
   catch (e) { Coach.toast(e.message, 'error'); }
 }
 
-async function saveAvailability() {
-  const availability = {};
-  document.querySelectorAll('.avail-day').forEach(el => {
-    availability[el.dataset.day] = el.value.split('\n').map(s => s.trim()).filter(Boolean);
-  });
-  try { await Coach.postJSON('/api/availability/save', { availability }); Coach.toast('Availability saved', 'success'); }
-  catch (e) { Coach.toast(e.message, 'error'); }
+async function saveHelpPrefs() {
+  const body = {
+    show_help_button: document.getElementById('help-show-button').checked,
+    show_feature_tips: document.getElementById('help-show-tips').checked,
+  };
+  try {
+    await Coach.postJSON('/api/settings/help', body);
+    Coach.toast('Help settings saved', 'success');
+    const btn = document.getElementById('btn-help');
+    if (btn) btn.hidden = !body.show_help_button;
+  } catch (e) { Coach.toast(e.message, 'error'); }
 }
+
+const TOUR_ORDER = ['basics', 'add_student', 'book_lesson', 'send_sms', 'twilio_setup', 'earnings_tax'];
+async function renderTourList() {
+  const wrap = document.getElementById('tour-list');
+  if (!wrap || typeof TOURS === 'undefined') return;
+  let completed = [];
+  try { completed = (await Coach.getJSON('/api/settings/help')).completed_tours || []; } catch (e) {}
+  wrap.innerHTML = TOUR_ORDER.map(id => {
+    const t = TOURS[id];
+    if (!t) return '';
+    const done = completed.includes(id);
+    return `<div class="tour-row">
+      <div class="tour-row-info">
+        <span class="tour-row-name">${t.name}</span>
+        <span class="tour-row-steps">${t.steps.length} steps</span>
+      </div>
+      <div class="tour-row-actions">
+        ${done ? '<span class="tour-done-badge">Done</span>' : ''}
+        <button class="btn btn-secondary btn-small" onclick="startTour('${id}')">${done ? 'Retake' : 'Start Tour'}</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function loadBackupStatus() {
+  const line = document.getElementById('backup-status-line');
+  if (!line) return;
+  try {
+    const s = await Coach.getJSON('/api/backup/status');
+    if (!s.last_backup) {
+      line.innerHTML = 'Last backup: <strong>Never</strong>';
+    } else {
+      const when = new Date(s.last_backup).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' });
+      const days = (s.days_since === 0) ? 'today' : `${s.days_since} day${s.days_since === 1 ? '' : 's'} ago`;
+      line.innerHTML = `Last backup: <strong>${when}</strong> (${days})`;
+    }
+  } catch (e) { line.textContent = 'Last backup: unknown'; }
+}
+
+function onBackupDownload() { setTimeout(loadBackupStatus, 1000); }
+
+async function restoreBackup(input) {
+  const file = input.files && input.files[0];
+  const box = document.getElementById('backup-result');
+  if (!file) return;
+  if (!await Coach.confirm({ title: 'Restore backup?', message: 'This will replace your current data with the contents of the backup file. Continue?', confirmText: 'Restore', cancelText: 'Cancel' })) {
+    input.value = '';
+    return;
+  }
+  box.textContent = 'Restoring…';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/backup/restore', { method: 'POST', body: fd });
+    const data = await res.json();
+    if (!res.ok || data.status !== 'ok') throw new Error(data.message || 'Restore failed');
+    box.innerHTML = `<span class="badge badge-replied">RESTORED</span> ${data.count} file(s) restored. Reloading…`;
+    setTimeout(() => location.reload(), 1200);
+  } catch (e) {
+    box.innerHTML = `<span class="badge badge-ignored">FAILED</span> ${e.message}`;
+  }
+  input.value = '';
+}
+
+// ===== Init =====
+(function restoreAccordions() {
+  const states = JSON.parse(localStorage.getItem('ivan_settings_sections') || '{}');
+  let any = false;
+  Object.entries(states).forEach(([id, open]) => {
+    if (open) {
+      const body = document.getElementById('acc-' + id);
+      if (body) { body.classList.add('open'); if (body.previousElementSibling) body.previousElementSibling.classList.add('open'); any = true; }
+    }
+  });
+  if (Object.keys(states).length === 0) toggleSection('personalisation');
+})();
+
+initTimePickers();
 
 (async () => {
   try {
@@ -626,6 +1131,8 @@ async function saveAvailability() {
       document.getElementById('local-ip-line').textContent = `http://${s.local_ip}:9999`;
     }
   } catch (e) {}
+  renderTourList();
+  loadBackupStatus();
 })();
 </script>
 {% endblock %}

@@ -8,9 +8,14 @@
     <div class="page-subtitle" id="cal-range">This week</div>
   </div>
   <div class="cal-controls">
-    <button class="btn btn-secondary btn-icon" onclick="Calendar.prev()" aria-label="Previous week"><i class="ti ti-chevron-left"></i></button>
-    <button class="btn btn-secondary" onclick="Calendar.thisWeek()">Today</button>
-    <button class="btn btn-secondary btn-icon" onclick="Calendar.next()" aria-label="Next week"><i class="ti ti-chevron-right"></i></button>
+    <div class="cal-view-switch" role="tablist">
+      <button class="cal-view-pill" data-view="day" onclick="Calendar.switchView('day')">Day</button>
+      <button class="cal-view-pill" data-view="week" onclick="Calendar.switchView('week')">Week</button>
+      <button class="cal-view-pill" data-view="month" onclick="Calendar.switchView('month')">Month</button>
+    </div>
+    <button class="btn btn-secondary btn-icon" onclick="Calendar.navigate(-1)" aria-label="Previous"><i class="ti ti-chevron-left"></i></button>
+    <button class="btn btn-secondary" onclick="Calendar.goToToday()">Today</button>
+    <button class="btn btn-secondary btn-icon" onclick="Calendar.navigate(1)" aria-label="Next"><i class="ti ti-chevron-right"></i></button>
     <button class="btn btn-primary" onclick="Coach.openAddLesson()"><i class="ti ti-plus"></i> Add Lesson</button>
   </div>
 </div>

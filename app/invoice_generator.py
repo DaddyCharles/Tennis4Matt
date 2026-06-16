@@ -50,6 +50,14 @@ def _money(amount) -> str:
         return "$0.00"
 
 
+def _fmt_abn(abn) -> str:
+    """Format an ABN as 'XX XXX XXX XXX' (11 digits). Leave unrecognised input as-is."""
+    digits = "".join(ch for ch in str(abn or "") if ch.isdigit())
+    if len(digits) != 11:
+        return str(abn or "").strip()
+    return f"{digits[0:2]} {digits[2:5]} {digits[5:8]} {digits[8:11]}"
+
+
 def build_invoice_pdf(invoice: dict, settings: dict) -> bytes:
     """Return a one-page A4 PDF invoice as bytes."""
     settings = settings or {}
@@ -70,7 +78,7 @@ def build_invoice_pdf(invoice: dict, settings: dict) -> bytes:
     coach_name = settings.get("coach_name", "") or "Tennis Coach"
     court_name = settings.get("court_name", "") or ""
     address = inv_cfg.get("coach_address", "") or settings.get("court_address", "") or ""
-    abn = inv_cfg.get("coach_abn", "") or ""
+    abn = _fmt_abn(inv_cfg.get("coach_abn", "") or "")
 
     y = page_h - 16 * mm
     c.setFillColor(WHITE)
@@ -167,54 +175,53 @@ def build_invoice_pdf(invoice: dict, settings: dict) -> bytes:
 
     # ---- Totals ---------------------------------------------------------
     gst = float(invoice.get("gst_amount", 0) or 0)
+    has_gst = gst > 0
     ty = body_y - 8 * mm
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica", 10)
-    c.drawRightString(right - 38 * mm, ty, "Subtotal")
-    c.setFillColor(INK)
-    c.drawRightString(right - 4 * mm, ty, _money(invoice.get("amount_ex_gst", invoice.get("amount_total", 0))))
-    ty -= 6 * mm
-    c.setFillColor(MUTED)
-    c.drawRightString(right - 38 * mm, ty, "GST")
-    c.setFillColor(INK)
-    c.drawRightString(right - 4 * mm, ty, _money(gst))
-
-    ty -= 9 * mm
+    if has_gst:
+        c.setFillColor(MUTED)
+        c.setFont("Helvetica", 10)
+        c.drawRightString(right - 38 * mm, ty, "Subtotal (ex GST)")
+        c.setFillColor(INK)
+        c.drawRightString(right - 4 * mm, ty, _money(invoice.get("amount_ex_gst", invoice.get("amount_total", 0))))
+        ty -= 6 * mm
+        c.setFillColor(MUTED)
+        c.drawRightString(right - 38 * mm, ty, "GST (10%)")
+        c.setFillColor(INK)
+        c.drawRightString(right - 4 * mm, ty, _money(gst))
+        ty -= 9 * mm
     c.setFillColor(NAVY)
     c.rect(right - 78 * mm, ty - 2 * mm, 78 * mm, 11 * mm, fill=1, stroke=0)
     c.setFillColor(WHITE)
     c.setFont("Helvetica-Bold", 11)
-    c.drawString(right - 74 * mm, ty + 1.5 * mm, "TOTAL")
+    c.drawString(right - 74 * mm, ty + 1.5 * mm, "TOTAL (inc GST)" if has_gst else "TOTAL")
     c.setFillColor(TEAL)
     c.setFont("Helvetica-Bold", 13)
     c.drawRightString(right - 4 * mm, ty + 1 * mm, _money(invoice.get("amount_total", 0)))
 
-    # ---- Payment details ------------------------------------------------
-    py = ty - 22 * mm
-    c.setStrokeColor(LINE)
-    c.line(left, py + 8 * mm, right, py + 8 * mm)
-    c.setFillColor(MUTED)
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(left, py, "PAYMENT DETAILS")
-    py -= 6 * mm
-    c.setFillColor(INK)
-    c.setFont("Helvetica", 9.5)
-    bank = inv_cfg.get("bank_name", "") or ""
-    bsb = inv_cfg.get("bank_bsb", "") or ""
+    # ---- Payment details (only when a bank account is set) --------------
     acct = inv_cfg.get("bank_account", "") or ""
-    rows = []
-    if bank:
-        rows.append(f"Bank: {bank}")
-    if bsb:
-        rows.append(f"BSB: {bsb}")
     if acct:
+        py = ty - 22 * mm
+        c.setStrokeColor(LINE)
+        c.line(left, py + 8 * mm, right, py + 8 * mm)
+        c.setFillColor(MUTED)
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(left, py, "PAYMENT DETAILS")
+        py -= 6 * mm
+        c.setFillColor(INK)
+        c.setFont("Helvetica", 9.5)
+        bank = inv_cfg.get("bank_name", "") or ""
+        bsb = inv_cfg.get("bank_bsb", "") or ""
+        rows = []
+        if bank:
+            rows.append(f"Bank: {bank}")
+        if bsb:
+            rows.append(f"BSB: {bsb}")
         rows.append(f"Account: {acct}")
-    rows.append(f"Reference: {invoice.get('invoice_number', '')}")
-    if not (bank or bsb or acct):
-        rows.insert(0, "Add your bank details in Settings > Invoicing.")
-    for line_text in rows:
-        c.drawString(left, py, line_text)
-        py -= 5 * mm
+        rows.append(f"Reference: {invoice.get('invoice_number', '')}")
+        for line_text in rows:
+            c.drawString(left, py, line_text)
+            py -= 5 * mm
 
     # ---- Footer ---------------------------------------------------------
     c.setFillColor(TEAL)

@@ -14,10 +14,12 @@ from bot.logger import log_error, log_info, load_settings
 from app import now_sydney
 
 BASE_URL = "https://api.open-meteo.com/v1/forecast"
+GEOCODE_URL = "https://geocoding-api.open-meteo.com/v1/search"
 CACHE_MINUTES = 30
 REQUEST_TIMEOUT = 12
 
 _weather_cache = {"data": None, "fetched_at": None}
+_week_cache = {"data": None, "fetched_at": None, "lat": None, "lon": None}
 _CACHE_LOCK = threading.Lock()
 
 _COMPASS = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW']
@@ -234,3 +236,178 @@ def get_cached_weather():
     refresh_weather_cache()
     with _CACHE_LOCK:
         return _weather_cache["data"]
+
+
+def clear_weather_cache() -> None:
+    """Drop cached weather/forecast so the next read re-fetches (e.g. after a location change)."""
+    with _CACHE_LOCK:
+        _weather_cache["data"] = None
+        _weather_cache["fetched_at"] = None
+        _week_cache["data"] = None
+        _week_cache["fetched_at"] = None
+        _week_cache["lat"] = None
+        _week_cache["lon"] = None
+
+
+# ---------------------------------------------------------------------------
+# Geocoding (location search)
+# ---------------------------------------------------------------------------
+
+def geocode_search(query: str):
+    """Search place names via Open-Meteo Geocoding (free, no key).
+
+    Returns a list of {name, display, lat, lon, country, admin1}. Empty list on
+    no match or error. ``display`` looks like "Panania, New South Wales, Australia".
+    """
+    query = (query or "").strip()
+    if len(query) < 2:
+        return []
+    params = {
+        "name": query,
+        "count": 8,
+        "language": "en",
+        "format": "json",
+    }
+    try:
+        resp = requests.get(GEOCODE_URL, params=params, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        raw = resp.json()
+    except Exception as e:
+        log_error(f"Geocode failed for {query!r}: {e}")
+        return []
+
+    out = []
+    for r in raw.get("results", []) or []:
+        name = r.get("name") or ""
+        admin1 = r.get("admin1") or ""
+        country = r.get("country") or ""
+        parts = [p for p in (name, admin1, country) if p]
+        out.append({
+            "name": name,
+            "display": ", ".join(parts),
+            "lat": r.get("latitude"),
+            "lon": r.get("longitude"),
+            "country": country,
+            "admin1": admin1,
+        })
+    return out
+
+
+# ---------------------------------------------------------------------------
+# 7-day forecast
+# ---------------------------------------------------------------------------
+
+def _week_lessons_by_date():
+    """Return {date_str: count} of lessons that count toward 'at risk' (scheduled/completed)."""
+    counts = {}
+    try:
+        from bot.logger import load_json
+        from app import LESSONS_PATH
+        data = load_json(LESSONS_PATH, {"lessons": []})
+        for lesson in data.get("lessons", []) or []:
+            status = (lesson.get("status") or "").lower()
+            if status in ("cancelled", "canceled"):
+                continue
+            d = lesson.get("date")
+            if d:
+                counts[d] = counts.get(d, 0) + 1
+    except Exception as e:
+        log_error(f"Week lessons count failed: {e}")
+    return counts
+
+
+def get_week_forecast(lat: float, lon: float):
+    """Fetch a 7-day daily forecast shaped for the coach home + calendar.
+
+    Each day: date, day_name, condition, temp_max, temp_min, rain_prob,
+    wind_max, sunrise, sunset, playability {rating, colour}, lessons_count,
+    lessons_at_risk. Returns {'days': [...]} or None on failure.
+    """
+    params = {
+        "latitude": lat,
+        "longitude": lon,
+        "daily": ",".join([
+            "weather_code", "temperature_2m_max", "temperature_2m_min",
+            "precipitation_probability_max", "wind_speed_10m_max",
+            "sunrise", "sunset",
+        ]),
+        "timezone": "Australia/Sydney",
+        "forecast_days": 7,
+        "wind_speed_unit": "kmh",
+    }
+    try:
+        resp = requests.get(BASE_URL, params=params, timeout=REQUEST_TIMEOUT)
+        resp.raise_for_status()
+        raw = resp.json()
+    except Exception as e:
+        log_error(f"Week forecast fetch failed: {e}")
+        return None
+
+    daily = raw.get("daily", {}) or {}
+    dates = daily.get("time", []) or []
+    codes = daily.get("weather_code", []) or []
+    tmax = daily.get("temperature_2m_max", []) or []
+    tmin = daily.get("temperature_2m_min", []) or []
+    rain = daily.get("precipitation_probability_max", []) or []
+    wind = daily.get("wind_speed_10m_max", []) or []
+    sunrises = daily.get("sunrise", []) or []
+    sunsets = daily.get("sunset", []) or []
+
+    lessons_by_date = _week_lessons_by_date()
+    today = now_sydney().date().isoformat()
+    days = []
+    for i, date_str in enumerate(dates):
+        try:
+            d = datetime.fromisoformat(date_str).date()
+            day_name = d.strftime("%A")
+        except (ValueError, TypeError):
+            day_name = ""
+        rain_prob = int(rain[i]) if i < len(rain) and rain[i] is not None else 0
+        wind_max = round(float(wind[i])) if i < len(wind) and wind[i] is not None else 0
+        t_max = round(float(tmax[i])) if i < len(tmax) and tmax[i] is not None else None
+        t_min = round(float(tmin[i])) if i < len(tmin) and tmin[i] is not None else None
+        play = get_playability(wind_max, rain_prob, t_max if t_max is not None else 20)
+        lessons_count = lessons_by_date.get(date_str, 0)
+        days.append({
+            "date": date_str,
+            "day_name": day_name,
+            "is_today": date_str == today,
+            "condition": wmo_code_to_condition(codes[i]) if i < len(codes) else "Cloudy",
+            "temp_max": t_max,
+            "temp_min": t_min,
+            "rain_prob": rain_prob,
+            "wind_max": wind_max,
+            "sunrise": _hhmm(sunrises[i]) if i < len(sunrises) else "",
+            "sunset": _hhmm(sunsets[i]) if i < len(sunsets) else "",
+            "playability": {"rating": play["rating"], "colour": play["colour"]},
+            "lessons_count": lessons_count,
+            "lessons_at_risk": rain_prob > 40 and lessons_count > 0,
+        })
+    return {"days": days}
+
+
+def get_cached_week_forecast():
+    """Return a cached 7-day forecast for the configured location, refreshing per CACHE_MINUTES."""
+    settings = load_settings()
+    lat = settings.get("latitude", -33.8688)
+    lon = settings.get("longitude", 151.2093)
+    with _CACHE_LOCK:
+        data = _week_cache["data"]
+        fetched = _week_cache["fetched_at"]
+        same_loc = _week_cache["lat"] == lat and _week_cache["lon"] == lon
+    fresh = (
+        data is not None
+        and fetched is not None
+        and same_loc
+        and (now_sydney() - fetched).total_seconds() < CACHE_MINUTES * 60
+    )
+    if fresh:
+        return data
+    data = get_week_forecast(lat, lon)
+    if data is not None:
+        with _CACHE_LOCK:
+            _week_cache["data"] = data
+            _week_cache["fetched_at"] = now_sydney()
+            _week_cache["lat"] = lat
+            _week_cache["lon"] = lon
+    return data

@@ -65,8 +65,8 @@
       <div class="card-title">Assumptions</div>
       <label class="biz-field"><span>Other income ($/yr)</span>
         <input type="number" step="0.01" id="a-other" class="biz-input" value="{{ settings.tax.other_income or 0 }}"></label>
-      <label class="biz-check"><input type="checkbox" id="a-help" {{ 'checked' if settings.tax.has_help_debt else '' }}> HELP/HECS debt</label>
-      <label class="biz-check"><input type="checkbox" id="a-health" {{ 'checked' if settings.tax.has_private_health else '' }}> Private health cover</label>
+      <label class="biz-check"><span class="toggle-switch"><input type="checkbox" id="a-help" {{ 'checked' if settings.tax.has_help_debt else '' }}><span class="toggle-slider"></span></span> HELP/HECS debt</label>
+      <label class="biz-check"><span class="toggle-switch"><input type="checkbox" id="a-health" {{ 'checked' if settings.tax.has_private_health else '' }}><span class="toggle-slider"></span></span> Private health cover</label>
       <button class="btn btn-primary btn-block" onclick="saveAssumptions()">Save</button>
       <div class="assumptions-note">This is an estimate only. Speak to your accountant for advice.</div>
     </div>

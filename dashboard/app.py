@@ -10,10 +10,12 @@ import csv
 import io
 import os
 import random
+import re
 import socket
 import subprocess
 import sys
 import uuid
+import zipfile
 from datetime import datetime, timedelta
 
 from flask import (
@@ -23,6 +25,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     send_from_directory,
     url_for,
 )
@@ -113,6 +116,17 @@ def datetimefmt_filter(iso_string: str) -> str:
         return datetime.fromisoformat(iso_string).strftime('%Y-%m-%d %H:%M')
     except (ValueError, TypeError):
         return iso_string
+
+
+@app.template_filter('dateshort')
+def dateshort_filter(date_string: str) -> str:
+    """Render a 'YYYY-MM-DD' date as '12 Jan'."""
+    if not date_string:
+        return ""
+    try:
+        return datetime.strptime(date_string, '%Y-%m-%d').strftime('%-d %b')
+    except (ValueError, TypeError):
+        return date_string
 
 
 # ---------------------------------------------------------------------------
@@ -245,8 +259,6 @@ def dashboard_page():
         'index.html',
         status=status,
         bot_running=running,
-        user_title=settings.get('user_title', 'Mr'),
-        user_name=settings.get('user_name', 'Scheers'),
         greeting=_time_greeting(),
         facebook_connected=(_session_status() == 'set'),
         today_count=today_count,
@@ -265,10 +277,16 @@ def dashboard_page():
 
 @app.route('/leads')
 def leads_page():
-    """Leads table page with filters."""
-    leads = _recent_leads(_load_leads(), MAX_LEADS_RETURNED)
+    """Lead Monitor page: stats header, scored cards, and pipeline."""
+    from app.leads import ensure_score, lead_stats
+    settings = load_settings()
+    all_leads = _load_leads()
+    stats = lead_stats(all_leads)
+    leads = _recent_leads(all_leads, MAX_LEADS_RETURNED)
+    for lead in leads:
+        ensure_score(lead, settings)
     groups = load_json(GROUPS_PATH, {"groups": []}).get('groups', [])
-    return render_template('leads.html', leads=leads, groups=groups)
+    return render_template('leads.html', leads=leads, groups=groups, stats=stats, settings=settings)
 
 
 @app.route('/keywords')
@@ -312,6 +330,7 @@ def settings_page():
             expiry = (datetime.fromisoformat(created) + timedelta(days=30)).isoformat()
         except (ValueError, TypeError):
             expiry = ''
+    avail_ranges, custom_presets = _get_availability(settings)
     return render_template(
         'settings.html',
         settings=settings,
@@ -319,6 +338,8 @@ def settings_page():
         session_created_at=created,
         session_expiry=expiry,
         startup_enabled=_startup_enabled(),
+        avail_ranges=avail_ranges,
+        custom_presets=custom_presets,
     )
 
 
@@ -566,6 +587,124 @@ def lead_delete(lead_id):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+_LEAD_PIPELINE = {'new', 'contacted', 'booked', 'dismissed'}
+
+
+@app.route('/api/leads/<lead_id>/status', methods=['POST'])
+def api_lead_status(lead_id):
+    """Set a lead's pipeline status: new | contacted | booked | dismissed."""
+    try:
+        body = request.get_json(silent=True) or {}
+        new_status = (body.get('status', '') or '').lower()
+        if new_status not in _LEAD_PIPELINE:
+            return jsonify({'status': 'error', 'message': 'Invalid status'}), 400
+        leads = _load_leads()
+        found = None
+        for lead in leads:
+            if lead.get('id') == lead_id:
+                lead['status'] = new_status
+                if new_status == 'contacted' and not lead.get('contacted_at'):
+                    lead['contacted_at'] = now_sydney().isoformat()
+                found = lead
+                break
+        if not found:
+            return jsonify({'status': 'error', 'message': 'Lead not found'}), 404
+        _save_leads(leads)
+        return jsonify({'status': 'ok', 'lead_status': new_status})
+    except Exception as e:
+        log_error(f"Lead status error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/leads/<lead_id>/notes', methods=['POST'])
+def api_lead_notes(lead_id):
+    """Save a free-text note on a lead."""
+    try:
+        body = request.get_json(silent=True) or {}
+        note = body.get('notes', '')
+        leads = _load_leads()
+        found = False
+        for lead in leads:
+            if lead.get('id') == lead_id:
+                lead['notes'] = note
+                found = True
+                break
+        if not found:
+            return jsonify({'status': 'error', 'message': 'Lead not found'}), 404
+        _save_leads(leads)
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        log_error(f"Lead notes error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/leads/<lead_id>/suggest-reply', methods=['POST'])
+def api_lead_suggest_reply(lead_id):
+    """Return a suggested reply (Groq if on, else template). Display-only, never auto-posts."""
+    try:
+        from app.leads import suggest_lead_reply
+        leads = _load_leads()
+        lead = next((l for l in leads if l.get('id') == lead_id), None)
+        if not lead:
+            return jsonify({'status': 'error', 'message': 'Lead not found'}), 404
+        result = suggest_lead_reply(lead, load_settings())
+        return jsonify({'status': 'ok', 'text': result['text'], 'source': result['source']})
+    except Exception as e:
+        log_error(f"Lead suggest-reply error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/leads/<lead_id>/convert-to-student', methods=['POST'])
+def api_lead_convert_to_student(lead_id):
+    """Create a student from a lead, mark the lead booked, and link them."""
+    try:
+        leads = _load_leads()
+        lead = next((l for l in leads if l.get('id') == lead_id), None)
+        if not lead:
+            return jsonify({'status': 'error', 'message': 'Lead not found'}), 404
+
+        name = (lead.get('poster_name') or '').strip() or 'New Student'
+        settings = load_settings()
+        student = {
+            'id': uuid.uuid4().hex,
+            'name': name,
+            'phone': lead.get('poster_phone', '') or '',
+            'email': '',
+            'level': 'Beginner',
+            'age_group': 'Adult',
+            'default_duration': 60,
+            'default_price': float(settings.get('default_lesson_price', 80) or 80),
+            'notes': f"Converted from Facebook lead ({lead.get('group_name', 'unknown group')}).",
+            'created_at': now_sydney().isoformat(),
+            'active': True,
+            'from_lead_id': lead_id,
+        }
+        students = _load_students()
+        students.append(student)
+        _save_students(students)
+
+        lead['status'] = 'booked'
+        lead['converted_student_id'] = student['id']
+        _save_leads(leads)
+
+        log_info(f"Lead converted to student: {name}")
+        return jsonify({'status': 'ok', 'student_id': student['id']})
+    except Exception as e:
+        log_error(f"Lead convert error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/leads/stats')
+def api_lead_stats():
+    """Pipeline + performance stats for the Lead Monitor."""
+    try:
+        from app.leads import lead_stats
+        return jsonify({'status': 'ok', **lead_stats(_load_leads())})
+    except Exception as e:
+        log_error(f"Lead stats error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
 @app.route('/leads/export')
 def leads_export():
     """Download all leads as a CSV file."""
@@ -783,8 +922,6 @@ def settings_save():
             except (TypeError, ValueError):
                 return default
 
-        settings['user_title'] = (body.get('user_title', settings.get('user_title', 'Mr')) or '').strip()
-        settings['user_name'] = (body.get('user_name', settings.get('user_name', 'Scheers')) or '').strip()
         settings['scan_interval_minutes'] = as_int(
             body.get('scan_interval_minutes'), settings.get('scan_interval_minutes', 15)
         )
@@ -956,20 +1093,269 @@ def _lesson_counts_by_student() -> dict:
 # Coach pages
 # ---------------------------------------------------------------------------
 
+def _weather_icon(condition) -> str:
+    """Map a condition string to a Tabler icon name."""
+    c = (condition or '').lower()
+    if 'thunder' in c or 'storm' in c:
+        return 'ti-storm'
+    if 'rain' in c or 'shower' in c or 'drizzle' in c:
+        return 'ti-cloud-rain'
+    if 'fog' in c or 'mist' in c or 'haze' in c:
+        return 'ti-mist'
+    if 'snow' in c:
+        return 'ti-snowflake'
+    if 'partly' in c:
+        return 'ti-cloud-sun'
+    if 'cloud' in c or 'overcast' in c:
+        return 'ti-cloud'
+    if 'sun' in c or 'clear' in c:
+        return 'ti-sun'
+    return 'ti-cloud'
+
+
+def _hhmm_to_12h(value) -> str:
+    """Format an 'HH:MM' (or hour int) string as '8:00 PM'."""
+    try:
+        if isinstance(value, int):
+            h, m = value, 0
+        else:
+            h, m = (int(p) for p in str(value).split(':')[:2])
+    except (ValueError, TypeError):
+        return str(value or '')
+    period = 'AM' if h < 12 else 'PM'
+    h12 = h % 12 or 12
+    return f"{h12}:{m:02d} {period}"
+
+
+def _is_after_sunset(weather) -> bool:
+    if not weather:
+        return False
+    sunset = weather.get('sunset_time')
+    if not sunset:
+        return False
+    try:
+        sh, sm = (int(p) for p in str(sunset).split(':')[:2])
+    except (ValueError, TypeError):
+        return False
+    now = now_sydney()
+    return (now.hour, now.minute) >= (sh, sm)
+
+
+def get_dashboard_mood(weather, current_hour) -> str:
+    """Return one of: 'sunny', 'cloud', 'rain', 'evening'."""
+    if current_hour >= 18 or _is_after_sunset(weather):
+        return 'evening'
+    if not weather:
+        return 'cloud'
+    cond = (weather.get('condition') or '').lower()
+    rain_prob = weather.get('rain_prob', 0) or 0
+    if 'rain' in cond or 'shower' in cond or 'storm' in cond or 'thunder' in cond or rain_prob >= 50:
+        return 'rain'
+    if 'cloud' in cond or 'overcast' in cond or 'fog' in cond:
+        return 'cloud'
+    return 'sunny'
+
+
+def get_weather_callout(weather, lessons_today) -> dict:
+    """Plain-English weather summary {icon, title, text, link, link_text}."""
+    if not weather:
+        return {'icon': 'ti-cloud-off', 'title': 'Weather unavailable',
+                'text': "Couldn't load the forecast right now.", 'link': '', 'link_text': ''}
+    sunset_12 = _hhmm_to_12h(weather.get('sunset_time')) if weather.get('sunset_time') else ''
+    scheduled = [l for l in lessons_today if l.get('status') == 'scheduled']
+    cond = (weather.get('condition') or '').lower()
+    rain_prob = weather.get('rain_prob', 0) or 0
+    is_rain = 'rain' in cond or 'shower' in cond or 'storm' in cond or 'thunder' in cond or rain_prob >= 50
+
+    if _is_after_sunset(weather):
+        text = 'Sun has set. Court lights are active.'
+        if scheduled:
+            nxt = scheduled[0]
+            text = f"Sun has set. Court lights active. {len(scheduled)} lesson{'s' if len(scheduled) != 1 else ''} left, next at {_hhmm_to_12h(nxt.get('start_time'))}."
+        return {'icon': 'ti-bulb', 'title': 'Lights are on', 'text': text, 'link': '', 'link_text': ''}
+
+    if is_rain:
+        if scheduled:
+            nxt = scheduled[0]
+            text = f"{nxt.get('student_name', 'A')}'s {_hhmm_to_12h(nxt.get('start_time'))} lesson may be affected. Tap to send a heads-up."
+            return {'icon': 'ti-umbrella', 'title': f'Rain likely today ({rain_prob}%)', 'text': text,
+                    'link': '/sms?template=rain_cancel&tab=contacts', 'link_text': 'Warn students'}
+        return {'icon': 'ti-umbrella', 'title': f'Rain likely today ({rain_prob}%)',
+                'text': 'No lessons booked today — nothing to reschedule.', 'link': '', 'link_text': ''}
+
+    # Dry day
+    tail = f" Court lights on at {sunset_12}." if sunset_12 else ''
+    if scheduled:
+        text = f"Clear through all your lessons.{tail}"
+    else:
+        text = f"Clear and dry today.{tail}"
+    return {'icon': 'ti-droplet-off', 'title': 'No rain today', 'text': text, 'link': '', 'link_text': ''}
+
+
+def _build_timeline(lessons, settings) -> list:
+    """Build hourly timeline rows mixing lesson cards and free slots."""
+    start = settings.get('working_hours_start', '07:00') or '07:00'
+    end = settings.get('working_hours_end', '20:00') or '20:00'
+    try:
+        sh = int(str(start).split(':')[0])
+        eh = int(str(end).split(':')[0])
+    except (ValueError, TypeError):
+        sh, eh = 7, 20
+    by_hour = {}
+    for l in lessons:
+        try:
+            h = int(str(l.get('start_time') or '07:00').split(':')[0])
+        except (ValueError, TypeError):
+            h = sh
+        by_hour.setdefault(h, []).append(l)
+    rows = []
+    for h in range(sh, eh + 1):
+        if by_hour.get(h):
+            for l in sorted(by_hour[h], key=lambda x: x.get('start_time', '')):
+                rows.append({'time': _hhmm_to_12h(l.get('start_time')), 'type': 'lesson', 'lesson': l})
+        else:
+            rows.append({'time': _hhmm_to_12h(h), 'type': 'free', 'hour24': f'{h:02d}:00'})
+    return rows
+
+
+def _min_to_hhmm(m: int) -> str:
+    return f"{(m // 60) % 24:02d}:{m % 60:02d}"
+
+
+def get_schedule_summary(lessons, settings) -> dict:
+    """Compact summary: booked totals + human-readable free blocks within working hours."""
+    start = settings.get('working_hours_start', '07:00') or '07:00'
+    end = settings.get('working_hours_end', '20:00') or '20:00'
+
+    def to_min(t):
+        parts = str(t).split(':')
+        try:
+            return int(parts[0]) * 60 + (int(parts[1]) if len(parts) > 1 else 0)
+        except (ValueError, TypeError):
+            return 0
+
+    ws, we = to_min(start), to_min(end)
+    booked = []
+    total_minutes = 0
+    total_earnings = 0.0
+    for l in lessons:
+        if l.get('status') == 'cancelled':
+            continue
+        st = l.get('start_time')
+        if not st:
+            continue
+        s = to_min(st)
+        dur = int(l.get('duration_minutes') or 0)
+        booked.append((s, s + dur))
+        total_minutes += dur
+        total_earnings += float(l.get('price') or 0)
+    booked.sort()
+
+    free = []
+    cursor = ws
+    for s, e in booked:
+        if s > cursor:
+            free.append((cursor, min(s, we)))
+        cursor = max(cursor, e)
+    if cursor < we:
+        free.append((cursor, we))
+
+    free_blocks = []
+    for s, e in free:
+        if e - s < 30:  # skip gaps shorter than 30 min — not worth slotting a lesson into
+            continue
+        if e >= we:
+            free_blocks.append(f"{_hhmm_to_12h(_min_to_hhmm(s))} onwards")
+        else:
+            free_blocks.append(f"{_hhmm_to_12h(_min_to_hhmm(s))}–{_hhmm_to_12h(_min_to_hhmm(e))}")
+
+    return {
+        'total_hours': round(total_minutes / 60, 1),
+        'total_earnings': total_earnings,
+        'free_blocks': free_blocks,
+    }
+
+
+def _enrich_lesson(l: dict) -> dict:
+    """Add display fields used by the agenda template."""
+    out = dict(l)
+    dur = l.get('duration_minutes') or 0
+    try:
+        sh, sm = (int(p) for p in str(l.get('start_time') or '0:0').split(':')[:2])
+        total = sh * 60 + sm + int(dur)
+        out['end_time'] = f"{(total // 60) % 24:02d}:{total % 60:02d}"
+    except (ValueError, TypeError):
+        out['end_time'] = ''
+    out['start_12h'] = _hhmm_to_12h(l.get('start_time'))
+    out['end_12h'] = _hhmm_to_12h(out['end_time']) if out['end_time'] else ''
+    return out
+
+
 @app.route('/coach')
 def coach_index():
-    """Home (Today) view: weather strip, today's lessons, quick stats."""
+    """Home (Today) view: agenda timeline + adaptive weather rail."""
     settings = load_settings()
+    now = now_sydney()
+    weather = coach_weather.get_cached_weather()
+    week = coach_weather.get_cached_week_forecast() or {'days': []}
+
+    today = today_str()
+    todays = [_enrich_lesson(l) for l in _load_lessons()
+              if l.get('date') == today and l.get('status') != 'cancelled']
+    todays.sort(key=lambda l: l.get('start_time', ''))
+
+    total_minutes = sum(int(l.get('duration_minutes') or 0) for l in todays)
+    total_value = sum(float(l.get('price') or 0) for l in todays)
+    hours = round(total_minutes / 60, 1)
+    hours_label = (f"{int(hours)}" if hours == int(hours) else f"{hours}") + (' hour' if hours == 1 else ' hours')
+
+    scheduled = [l for l in todays if l.get('status') == 'scheduled']
+    next_lesson = None
+    for l in scheduled:
+        try:
+            sh, sm = (int(p) for p in str(l.get('start_time')).split(':')[:2])
+        except (ValueError, TypeError):
+            continue
+        if (sh, sm) >= (now.hour, now.minute):
+            next_lesson = l
+            break
+    if next_lesson is None and scheduled:
+        next_lesson = scheduled[0]
+
+    summary = coach_earnings.get_earnings_summary()
+    total_owed = coach_earnings.get_total_owed()
+    mood = get_dashboard_mood(weather, now.hour)
+    callout = get_weather_callout(weather, todays)
+
+    week_days = week.get('days', [])
+    for d in week_days:
+        d['icon'] = _weather_icon(d.get('condition'))
+    sunset_12 = _hhmm_to_12h(weather.get('sunset_time')) if weather and weather.get('sunset_time') else '—'
+
     return render_template(
         'coach_index.html',
         settings=settings,
         coach_title=settings.get('coach_title', 'Mr'),
         coach_name=settings.get('coach_name', 'Matt'),
-        user_title=settings.get('user_title', 'Mr'),
-        user_name=settings.get('user_name', 'Scheers'),
         greeting=_time_greeting(),
-        today=today_str(),
-        today_long=now_sydney().strftime('%A, %-d %B %Y'),
+        today=today,
+        today_long=now.strftime('%A, %-d %B %Y'),
+        mood=mood,
+        weather=weather,
+        weather_icon=_weather_icon(weather.get('condition') if weather else ''),
+        callout=callout,
+        week_days=week_days,
+        sunset_12=sunset_12,
+        timeline=_build_timeline(todays, settings),
+        schedule_summary=get_schedule_summary(todays, settings),
+        lessons_today=todays,
+        lesson_count=len(todays),
+        hours_label=hours_label,
+        total_value=total_value,
+        earnings_week=summary.get('week', 0),
+        earnings_month=summary.get('month', 0),
+        total_owed=total_owed,
+        next_lesson=next_lesson,
     )
 
 
@@ -998,6 +1384,30 @@ def student_detail_page(student_id):
 def earnings_page():
     settings = load_settings()
     return render_template('earnings.html', settings=settings)
+
+
+@app.route('/money-owed')
+def money_owed_page():
+    settings = load_settings()
+    owed = coach_earnings.get_money_owed()
+    total = coach_earnings.get_total_owed()
+    return render_template(
+        'money_owed.html',
+        settings=settings,
+        owed=owed,
+        total=total,
+        active_page='money-owed',
+    )
+
+
+@app.route('/api/money-owed/mark-paid/<student_id>', methods=['POST'])
+def api_money_owed_mark_paid(student_id):
+    try:
+        count = coach_earnings.mark_student_paid(student_id)
+        return jsonify({'status': 'ok', 'marked': count})
+    except Exception as e:
+        log_error(f"Mark paid error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -1086,11 +1496,45 @@ def api_lessons_add():
     try:
         body = request.get_json(silent=True) or {}
         student_id = body.get('student_id', '')
-        student = _student_by_id(student_id)
-        blocks = int(body.get('blocks', 2) or 2)
+
+        # Create a new student inline if the modal sent the "+ Add new student" option
+        if student_id == '__new__':
+            new_name = (body.get('new_student_name', '') or '').strip()
+            if not new_name:
+                return jsonify({'status': 'error', 'message': 'New student name required'}), 400
+            new_student = {
+                'id': uuid.uuid4().hex,
+                'name': new_name,
+                'phone': coach_sms.format_phone_au(body.get('new_student_phone', '')),
+                'email': '',
+                'level': body.get('new_student_level', 'Beginner') or 'Beginner',
+                'age_group': 'Adult',
+                'default_duration': 60,
+                'default_price': float(body.get('price') or 80),
+                'notes': '',
+                'created_at': now_sydney().isoformat(),
+                'active': True,
+            }
+            students = _load_students()
+            students.append(new_student)
+            _save_students(students)
+            log_info(f"Student added (from lesson modal): {new_name}")
+            student_id = new_student['id']
+            student = new_student
+        else:
+            student = _student_by_id(student_id)
+
+        # Prefer explicit duration_minutes (15-min increments); fall back to legacy blocks
+        dur_raw = body.get('duration_minutes')
+        if dur_raw not in (None, ''):
+            duration_minutes = max(15, int(dur_raw))
+            blocks = max(1, round(duration_minutes / 30))
+        else:
+            blocks = int(body.get('blocks', 2) or 2)
+            duration_minutes = blocks_to_minutes(blocks)
         price = body.get('price')
         if price in (None, ''):
-            price = coach_earnings.get_price_for_blocks(blocks)
+            price = coach_earnings.get_price_for_minutes(duration_minutes)
         base = {
             'id': uuid.uuid4().hex,
             'student_id': student_id,
@@ -1098,7 +1542,7 @@ def api_lessons_add():
             'date': body.get('date', today_str()),
             'start_time': body.get('start_time', '09:00'),
             'blocks': blocks,
-            'duration_minutes': blocks_to_minutes(blocks),
+            'duration_minutes': duration_minutes,
             'price': float(price),
             'status': 'scheduled',
             'recurring': bool(body.get('recurring', False)),
@@ -1109,8 +1553,25 @@ def api_lessons_add():
             'created_at': now_sydney().isoformat(),
         }
         lessons = _load_lessons()
-        if base['recurring'] and body.get('recurring_rule'):
-            new_items = _generate_recurring(base, body.get('recurring_rule'))
+        recur_weeks = body.get('recur_weeks')
+        rule = body.get('recurring_rule')
+        if base['recurring'] and recur_weeks is not None:
+            try:
+                weeks = int(recur_weeks)
+            except (TypeError, ValueError):
+                weeks = 1
+            weeks = 52 if weeks <= 0 else max(1, min(52, weeks))
+            rule = rule or {'frequency': 'weekly'}
+            try:
+                start = datetime.strptime(base['date'], '%Y-%m-%d').date()
+                rule['end_date'] = (start + timedelta(weeks=weeks - 1)).isoformat()
+            except (KeyError, ValueError):
+                pass
+            rule['weeks'] = weeks
+            base['recurring_rule'] = rule
+            new_items = _generate_recurring(base, rule)
+        elif base['recurring'] and rule:
+            new_items = _generate_recurring(base, rule)
         else:
             base['recurring'] = False
             base['recurring_rule'] = None
@@ -1186,6 +1647,32 @@ def api_lesson_pay(lesson_id):
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+@app.route('/api/lessons/<lesson_id>/coach-notes', methods=['POST'])
+def api_lesson_coach_notes(lesson_id):
+    try:
+        body = request.get_json(silent=True) or {}
+        if not _update_lesson(lesson_id, {'coach_notes': body.get('coach_notes', '')}):
+            return jsonify({'status': 'error', 'message': 'Lesson not found'}), 404
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/lessons/<lesson_id>/reschedule-data')
+def api_lesson_reschedule_data(lesson_id):
+    lesson = next((l for l in _load_lessons() if l.get('id') == lesson_id), None)
+    if not lesson:
+        return jsonify({'status': 'error', 'message': 'Lesson not found'}), 404
+    return jsonify({
+        'student_id': lesson.get('student_id', ''),
+        'student_name': lesson.get('student_name', ''),
+        'blocks': lesson.get('blocks', 2),
+        'price': lesson.get('price', 0),
+        'original_date': lesson.get('date', ''),
+        'original_time': lesson.get('start_time', ''),
+    })
+
+
 @app.route('/api/lessons/<lesson_id>', methods=['DELETE'])
 def api_lesson_delete(lesson_id):
     try:
@@ -1223,7 +1710,7 @@ def api_students_add():
         student = {
             'id': uuid.uuid4().hex,
             'name': name,
-            'phone': body.get('phone', ''),
+            'phone': coach_sms.format_phone_au(body.get('phone', '')),
             'email': body.get('email', ''),
             'level': body.get('level', 'Beginner'),
             'age_group': body.get('age_group', 'Adult'),
@@ -1254,7 +1741,7 @@ def api_students_edit(student_id):
             if student.get('id') == student_id:
                 for key in editable:
                     if key in body:
-                        student[key] = body[key]
+                        student[key] = coach_sms.format_phone_au(body[key]) if key == 'phone' else body[key]
                 if 'default_duration' in body:
                     student['default_duration'] = int(body['default_duration'] or 60)
                 if 'default_price' in body:
@@ -1295,6 +1782,101 @@ def api_student_lessons(student_id):
     return jsonify({'lessons': lessons})
 
 
+@app.route('/api/students/<student_id>/coaching-profile', methods=['GET', 'POST'])
+def api_student_coaching_profile(student_id):
+    students = _load_students()
+    student = next((s for s in students if s.get('id') == student_id), None)
+    if not student:
+        return jsonify({'status': 'error', 'message': 'Student not found'}), 404
+    if request.method == 'GET':
+        return jsonify({'coaching_profile': student.get('coaching_profile', {})})
+    try:
+        body = request.get_json(silent=True) or {}
+        profile = student.get('coaching_profile', {}) or {}
+        for key in ('current_focus', 'goals'):
+            if key in body:
+                profile[key] = body.get(key, '')
+        for key in ('strengths', 'areas_to_improve'):
+            if key in body:
+                items = body.get(key) or []
+                profile[key] = [str(x).strip() for x in items if str(x).strip()]
+        profile['updated_at'] = now_sydney().isoformat()
+        student['coaching_profile'] = profile
+        _save_students(students)
+        return jsonify({'status': 'ok', 'coaching_profile': profile})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Calendar API
+# ---------------------------------------------------------------------------
+
+def _week_rain_map() -> dict:
+    """Map of date string -> rain probability from the cached week forecast."""
+    rain = {}
+    try:
+        data = coach_weather.get_cached_week_forecast() or {}
+        for day in data.get('days', []):
+            if day.get('date') is not None:
+                rain[day['date']] = day.get('rain_prob', 0)
+    except Exception:
+        pass
+    return rain
+
+
+@app.route('/api/calendar/day')
+def api_calendar_day():
+    date_f = request.args.get('date') or today_str()
+    lessons = [l for l in _load_lessons() if l.get('date') == date_f]
+    lessons = sorted(lessons, key=lambda l: l.get('start_time', ''))
+    earnings = round(sum(
+        float(l.get('price') or 0) for l in lessons
+        if l.get('status') in ('completed', 'scheduled')
+    ), 2)
+    return jsonify({
+        'date': date_f,
+        'lessons': lessons,
+        'earnings': earnings,
+        'rain_prob': _week_rain_map().get(date_f, 0),
+    })
+
+
+@app.route('/api/calendar/month')
+def api_calendar_month():
+    now = now_sydney()
+    try:
+        year = int(request.args.get('year') or now.year)
+        month = int(request.args.get('month') or now.month)
+    except (TypeError, ValueError):
+        year, month = now.year, now.month
+    rain_map = _week_rain_map()
+    by_day = {}
+    for l in _load_lessons():
+        d = l.get('date') or ''
+        try:
+            dt = datetime.strptime(d, '%Y-%m-%d').date()
+        except (TypeError, ValueError):
+            continue
+        if dt.year != year or dt.month != month:
+            continue
+        entry = by_day.setdefault(d, {'lesson_count': 0, 'earnings': 0.0})
+        if l.get('status') != 'cancelled':
+            entry['lesson_count'] += 1
+        if l.get('status') in ('completed', 'scheduled'):
+            entry['earnings'] += float(l.get('price') or 0)
+    days = []
+    for d, info in by_day.items():
+        days.append({
+            'date': d,
+            'lesson_count': info['lesson_count'],
+            'earnings': round(info['earnings'], 2),
+            'rain_prob': rain_map.get(d, 0),
+        })
+    days.sort(key=lambda x: x['date'])
+    return jsonify({'year': year, 'month': month, 'days': days})
+
+
 # ---------------------------------------------------------------------------
 # Weather API
 # ---------------------------------------------------------------------------
@@ -1309,6 +1891,18 @@ def api_weather():
 def api_weather_hourly():
     data = coach_weather.get_cached_weather()
     return jsonify({'hourly': (data or {}).get('hourly', [])})
+
+
+@app.route('/api/weather/week')
+def api_weather_week():
+    data = coach_weather.get_cached_week_forecast()
+    return jsonify(data or {'days': []})
+
+
+@app.route('/api/geocode')
+def api_geocode():
+    query = request.args.get('q', '')
+    return jsonify(coach_weather.geocode_search(query))
 
 
 # ---------------------------------------------------------------------------
@@ -1343,26 +1937,6 @@ def api_earnings_export():
         mimetype='text/csv',
         headers={'Content-Disposition': 'attachment; filename=earnings.csv'},
     )
-
-
-@app.route('/api/earnings/prices', methods=['POST'])
-def api_earnings_prices():
-    try:
-        body = request.get_json(silent=True) or {}
-        settings = load_settings()
-        prices = settings.get('lesson_prices', {}) or {}
-        for key in ('30min', '60min', '90min', '120min'):
-            if key in body:
-                try:
-                    prices[key] = float(body[key])
-                except (TypeError, ValueError):
-                    pass
-        settings['lesson_prices'] = prices
-        save_json(SETTINGS_PATH, settings)
-        log_info("Lesson prices updated.")
-        return jsonify({'status': 'ok'})
-    except Exception as e:
-        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
 # ---------------------------------------------------------------------------
@@ -1442,7 +2016,7 @@ def api_settings_save():
         settings = load_settings()
         str_fields = (
             'coach_name', 'coach_title', 'location', 'court_name', 'court_address',
-            'anthropic_api_key', 'working_hours_start', 'working_hours_end',
+            'working_hours_start', 'working_hours_end',
             'vapid_claim_email',
         )
         for key in str_fields:
@@ -1461,14 +2035,20 @@ def api_settings_save():
                 pass
         if 'push_notifications_enabled' in body:
             settings['push_notifications_enabled'] = bool(body['push_notifications_enabled'])
-        if isinstance(body.get('lesson_prices'), dict):
-            prices = settings.get('lesson_prices', {}) or {}
-            for key, val in body['lesson_prices'].items():
-                try:
-                    prices[key] = float(val)
-                except (TypeError, ValueError):
-                    pass
-            settings['lesson_prices'] = prices
+        if isinstance(body.get('pricing'), dict):
+            pricing = settings.get('pricing', {}) or {}
+            pricing_in = body['pricing']
+            if isinstance(pricing_in.get('duration_prices'), dict):
+                dp = pricing.get('duration_prices', {}) or {}
+                for key, val in pricing_in['duration_prices'].items():
+                    try:
+                        dp[str(key)] = float(val)
+                    except (TypeError, ValueError):
+                        pass
+                pricing['duration_prices'] = dp
+            if isinstance(pricing_in.get('presets'), list):
+                pricing['presets'] = _clean_presets(pricing_in['presets'])
+            settings['pricing'] = pricing
         if isinstance(body.get('invoicing'), dict):
             inv = settings.get('invoicing', {}) or {}
             inv_in = body['invoicing']
@@ -1493,10 +2073,68 @@ def api_settings_save():
             if 'enabled' in tw_in:
                 tw['enabled'] = bool(tw_in['enabled'])
             settings['twilio'] = tw
+        if isinstance(body.get('ai'), dict):
+            ai = settings.get('ai', {}) or {}
+            ai_in = body['ai']
+            ai.setdefault('provider', 'groq')
+            if 'groq_api_key' in ai_in:
+                ai['groq_api_key'] = (ai_in['groq_api_key'] or '').strip() if isinstance(ai_in['groq_api_key'], str) else ai_in['groq_api_key']
+            if 'model' in ai_in and ai_in['model']:
+                ai['model'] = (ai_in['model'] or '').strip()
+            if 'enabled' in ai_in:
+                ai['enabled'] = bool(ai_in['enabled'])
+            settings['ai'] = ai
+        if isinstance(body.get('tax'), dict):
+            tax = settings.get('tax', {}) or {}
+            tax_in = body['tax']
+            if 'other_income' in tax_in:
+                try:
+                    tax['other_income'] = float(tax_in['other_income'])
+                except (TypeError, ValueError):
+                    pass
+            for key in ('has_help_debt', 'has_private_health'):
+                if key in tax_in:
+                    tax[key] = bool(tax_in[key])
+            if 'financial_year_start' in tax_in:
+                tax['financial_year_start'] = (tax_in['financial_year_start'] or '').strip()
+            settings['tax'] = tax
         save_json(SETTINGS_PATH, settings)
         log_info("Coach settings saved.")
         return jsonify({'status': 'ok'})
     except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+def _clean_presets(raw) -> list:
+    """Normalise a list of {name, amount} price presets, dropping invalid ones."""
+    cleaned = []
+    for item in raw or []:
+        if not isinstance(item, dict):
+            continue
+        name = (item.get('name', '') or '').strip()
+        if not name:
+            continue
+        try:
+            amount = float(item.get('amount', 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        cleaned.append({'name': name, 'amount': amount})
+    return cleaned
+
+
+@app.route('/api/settings/price-presets', methods=['POST'])
+def api_settings_price_presets():
+    try:
+        body = request.get_json(silent=True) or {}
+        settings = load_settings()
+        pricing = settings.get('pricing', {}) or {}
+        pricing['presets'] = _clean_presets(body.get('presets', []))
+        settings['pricing'] = pricing
+        save_json(SETTINGS_PATH, settings)
+        log_info("Price presets saved.")
+        return jsonify({'status': 'ok', 'presets': pricing['presets']})
+    except Exception as e:
+        log_error(f"Save price presets error: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
@@ -1515,15 +2153,175 @@ def api_settings_test_weather():
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 
+@app.route('/api/settings/location')
+def api_settings_location_get():
+    settings = load_settings()
+    return jsonify({
+        'latitude': settings.get('latitude', -33.8688),
+        'longitude': settings.get('longitude', 151.2093),
+        'location': settings.get('location', ''),
+    })
+
+
+@app.route('/api/settings/location', methods=['POST'])
+def api_settings_location_save():
+    try:
+        body = request.get_json(silent=True) or {}
+        settings = load_settings()
+        if 'location' in body:
+            settings['location'] = (body['location'] or '').strip()
+        for key in ('latitude', 'longitude'):
+            if key in body:
+                settings[key] = float(body[key])
+        save_json(SETTINGS_PATH, settings)
+        coach_weather.clear_weather_cache()
+        log_info(f"Location updated: {settings.get('location', '')}")
+        return jsonify({
+            'status': 'ok',
+            'location': settings.get('location', ''),
+            'latitude': settings.get('latitude'),
+            'longitude': settings.get('longitude'),
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/settings/ai', methods=['POST'])
+def api_settings_ai_save():
+    """Save the GroqCloud AI configuration block."""
+    try:
+        body = request.get_json(silent=True) or {}
+        settings = load_settings()
+        ai = settings.get('ai', {}) or {}
+        ai.setdefault('provider', 'groq')
+        if 'groq_api_key' in body:
+            ai['groq_api_key'] = (body['groq_api_key'] or '').strip() if isinstance(body['groq_api_key'], str) else body['groq_api_key']
+        if body.get('model'):
+            ai['model'] = (body['model'] or '').strip()
+        if 'enabled' in body:
+            ai['enabled'] = bool(body['enabled'])
+        settings['ai'] = ai
+        save_json(SETTINGS_PATH, settings)
+        log_info("AI (GroqCloud) settings saved.")
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/ai/test', methods=['POST'])
+def api_ai_test():
+    """Test the GroqCloud connection with the saved (or supplied) key."""
+    try:
+        body = request.get_json(silent=True) or {}
+        key = (body.get('groq_api_key') or '').strip()
+        if key:
+            settings = load_settings()
+            ai = settings.get('ai', {}) or {}
+            ai['groq_api_key'] = key
+            ai.setdefault('provider', 'groq')
+            if body.get('model'):
+                ai['model'] = (body['model'] or '').strip()
+            settings['ai'] = ai
+            save_json(SETTINGS_PATH, settings)
+        result = ai_helper.test_groq_connection()
+        if result.get('success'):
+            return jsonify({'status': 'ok', 'message': result.get('message', 'AI connected')})
+        return jsonify({'status': 'error', 'message': result.get('message', 'AI request failed')}), 400
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# Back-compat alias for the older test-ai endpoint.
 @app.route('/api/settings/test-ai', methods=['POST'])
 def api_settings_test_ai():
-    if not ai_helper.ai_available():
-        return jsonify({'status': 'error', 'message': 'No API key set.'}), 400
+    result = ai_helper.test_groq_connection()
+    if result.get('success'):
+        return jsonify({'status': 'ok', 'message': result.get('message', 'AI connected')})
+    return jsonify({'status': 'error', 'message': result.get('message', 'AI request failed')}), 400
+
+
+# ---------------------------------------------------------------------------
+# Help & Guided Tours API
+# ---------------------------------------------------------------------------
+
+def _help_settings(settings):
+    """Return the help block with all defaults present."""
+    h = settings.get('help') or {}
+    return {
+        'show_help_button': bool(h.get('show_help_button', True)),
+        'show_feature_tips': bool(h.get('show_feature_tips', True)),
+        'completed_tours': list(h.get('completed_tours', []) or []),
+        'dismissed_tips': list(h.get('dismissed_tips', []) or []),
+    }
+
+
+@app.route('/api/settings/help')
+def api_settings_help_get():
+    return jsonify(_help_settings(load_settings()))
+
+
+@app.route('/api/settings/help', methods=['POST'])
+def api_settings_help_save():
     try:
-        reply = ai_helper._call("Reply with exactly: OK")
-        if reply:
-            return jsonify({'status': 'ok', 'message': 'AI connection works.'})
-        return jsonify({'status': 'error', 'message': 'AI did not respond. Check your API key.'}), 502
+        body = request.get_json(silent=True) or {}
+        settings = load_settings()
+        h = _help_settings(settings)
+        if 'show_help_button' in body:
+            h['show_help_button'] = bool(body['show_help_button'])
+        if 'show_feature_tips' in body:
+            h['show_feature_tips'] = bool(body['show_feature_tips'])
+        settings['help'] = h
+        save_json(SETTINGS_PATH, settings)
+        return jsonify({'status': 'ok', 'help': h})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/settings/complete-tour', methods=['POST'])
+def api_settings_complete_tour():
+    try:
+        body = request.get_json(silent=True) or {}
+        tour_id = (body.get('tour_id') or '').strip()
+        if not tour_id:
+            return jsonify({'status': 'error', 'message': 'tour_id required'}), 400
+        settings = load_settings()
+        h = _help_settings(settings)
+        if tour_id not in h['completed_tours']:
+            h['completed_tours'].append(tour_id)
+        settings['help'] = h
+        save_json(SETTINGS_PATH, settings)
+        return jsonify({'status': 'ok', 'completed_tours': h['completed_tours']})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/settings/reset-tours', methods=['POST'])
+def api_settings_reset_tours():
+    try:
+        settings = load_settings()
+        h = _help_settings(settings)
+        h['completed_tours'] = []
+        settings['help'] = h
+        save_json(SETTINGS_PATH, settings)
+        return jsonify({'status': 'ok'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/settings/dismiss-tip', methods=['POST'])
+def api_settings_dismiss_tip():
+    try:
+        body = request.get_json(silent=True) or {}
+        tip_id = (body.get('tip_id') or '').strip()
+        if not tip_id:
+            return jsonify({'status': 'error', 'message': 'tip_id required'}), 400
+        settings = load_settings()
+        h = _help_settings(settings)
+        if tip_id not in h['dismissed_tips']:
+            h['dismissed_tips'].append(tip_id)
+        settings['help'] = h
+        save_json(SETTINGS_PATH, settings)
+        return jsonify({'status': 'ok', 'dismissed_tips': h['dismissed_tips']})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -1766,13 +2564,21 @@ def _package_alerts() -> list:
 
 @app.context_processor
 def inject_business_context():
-    """Expose settings + business badges to every template (incl. base.html)."""
+    """Expose settings + business badges + adaptive mood to every template (incl. base.html)."""
     try:
+        owed = coach_earnings.get_money_owed()
+        try:
+            mood = get_dashboard_mood(coach_weather.get_cached_weather(), now_sydney().hour)
+        except Exception:
+            mood = 'cloud'
         return {
             'settings': load_settings(),
             'invoice_stats': _invoice_summary(),
             'package_alerts': len(_package_alerts()),
             'sms_stats': {'unread': 0},
+            'total_owed': round(sum(r['amount_owed'] for r in owed), 2),
+            'owed_count': len(owed),
+            'mood': mood,
         }
     except Exception:
         return {
@@ -1780,6 +2586,9 @@ def inject_business_context():
             'invoice_stats': {'overdue_count': 0},
             'package_alerts': 0,
             'sms_stats': {'unread': 0},
+            'total_owed': 0,
+            'owed_count': 0,
+            'mood': 'cloud',
         }
 
 
@@ -2270,23 +3079,175 @@ def api_waitlist_all():
     return jsonify({'waitlist': entries})
 
 
+_AVAIL_DAYS = ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')
+
+
+_DEFAULT_RANGE = {"open": False, "start": "07:00", "end": "19:00"}
+
+
+def _to_min(hhmm, fallback=0):
+    """Parse 'HH:MM' into minutes-since-midnight; fallback on bad input."""
+    try:
+        h, m = [int(x) for x in str(hhmm).split(':')[:2]]
+        return h * 60 + m
+    except (ValueError, AttributeError, TypeError):
+        return fallback
+
+
+def _from_min(total):
+    """Format minutes-since-midnight as 'HH:MM' (clamped to 00:00–23:59)."""
+    total = max(0, min(23 * 60 + 59, int(total)))
+    return f"{total // 60:02d}:{total % 60:02d}"
+
+
+def _coerce_range(val):
+    """Coerce one day's value into {open, start, end}.
+
+    Accepts the new dict form, or migrates the legacy slot-list form
+    (['07:00','08:00',...]) into a min/max range.
+    """
+    if isinstance(val, dict) and ('open' in val or 'start' in val or 'end' in val):
+        start = val.get('start') or _DEFAULT_RANGE['start']
+        end = val.get('end') or _DEFAULT_RANGE['end']
+        if _to_min(end) <= _to_min(start):
+            end = _from_min(_to_min(start) + 60)
+        return {'open': bool(val.get('open', False)), 'start': start, 'end': end}
+    if isinstance(val, list) and val:
+        mins = [_to_min(t) for t in val if str(t).strip()]
+        if mins:
+            lo, hi = min(mins), max(mins)
+            # Legacy slots were start-of-block times; extend end by one hour
+            # so the last slot stays inside the migrated working window.
+            return {'open': True, 'start': _from_min(lo), 'end': _from_min(hi + 60)}
+    return dict(_DEFAULT_RANGE)
+
+
+def _normalise_ranges(raw):
+    """Coerce an incoming availability dict into {day: {open,start,end}} for all 7 days."""
+    raw = raw or {}
+    slots = raw.get('slots') if isinstance(raw, dict) else None
+    out = {}
+    for day in _AVAIL_DAYS:
+        if day in raw:
+            out[day] = _coerce_range(raw.get(day))
+        elif isinstance(slots, dict) and day in slots:
+            out[day] = _coerce_range(slots.get(day))
+        else:
+            out[day] = dict(_DEFAULT_RANGE)
+    return out
+
+
+def _builtin_preset_ranges(preset_id):
+    """Return a {day: {open,start,end}} dict for a built-in preset id, or None."""
+    weekdays = ('monday', 'tuesday', 'wednesday', 'thursday', 'friday')
+    weekend = ('saturday', 'sunday')
+    presets = {
+        'weekday_mornings': (weekdays, '07:00', '12:00'),
+        'weekday_evenings': (weekdays, '16:00', '20:00'),
+        'weekends': (weekend, '08:00', '16:00'),
+        'every_day': (_AVAIL_DAYS, '07:00', '20:00'),
+        'after_school': (weekdays, '15:30', '19:00'),
+    }
+    spec = presets.get(preset_id)
+    if not spec:
+        return None
+    days, start, end = spec
+    ranges = {}
+    for day in _AVAIL_DAYS:
+        if day in days:
+            ranges[day] = {'open': True, 'start': start, 'end': end}
+        else:
+            ranges[day] = {'open': False, 'start': start, 'end': end}
+    return ranges
+
+
+def _get_availability(settings):
+    """Return (ranges, custom_presets), migrating any legacy slot data."""
+    avail = settings.get('availability', {}) or {}
+    return _normalise_ranges(avail), (avail.get('custom_presets') or {})
+
+
+def _store_ranges(settings, ranges):
+    """Persist normalised ranges back onto settings['availability'] (drops legacy keys)."""
+    avail = settings.get('availability', {}) or {}
+    cleaned = {day: ranges[day] for day in _AVAIL_DAYS}
+    cleaned['custom_presets'] = avail.get('custom_presets') or {}
+    settings['availability'] = cleaned
+    return cleaned
+
+
 @app.route('/api/availability/save', methods=['POST'])
 def api_availability_save():
     try:
         body = request.get_json(silent=True) or {}
-        availability = body.get('availability', body)
+        incoming = body.get('ranges', body.get('availability', body))
         settings = load_settings()
-        days = ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')
-        current = settings.get('availability', {}) or {}
-        for day in days:
-            if day in availability:
-                slots = availability[day]
-                if isinstance(slots, list):
-                    current[day] = slots
-        settings['availability'] = current
+        ranges = _normalise_ranges(incoming)
+        _store_ranges(settings, ranges)
         save_json(SETTINGS_PATH, settings)
         log_info("Availability saved.")
-        return jsonify({'status': 'ok', 'availability': current})
+        return jsonify({'status': 'ok', 'ranges': ranges})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/availability/apply-preset', methods=['POST'])
+def api_availability_apply_preset():
+    try:
+        body = request.get_json(silent=True) or {}
+        preset_id = (body.get('preset_id') or body.get('preset') or '').strip()
+        settings = load_settings()
+        avail = settings.get('availability', {}) or {}
+        ranges = _builtin_preset_ranges(preset_id)
+        if ranges is None:
+            entry = (avail.get('custom_presets') or {}).get(preset_id)
+            if isinstance(entry, dict):
+                source = entry.get('ranges', entry.get('slots', entry))
+                ranges = _normalise_ranges(source)
+        if ranges is None:
+            return jsonify({'status': 'error', 'message': 'Unknown preset'}), 404
+        ranges = _normalise_ranges(ranges)
+        _store_ranges(settings, ranges)
+        save_json(SETTINGS_PATH, settings)
+        return jsonify({'status': 'ok', 'ranges': ranges})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/availability/save-preset', methods=['POST'])
+def api_availability_save_preset():
+    try:
+        body = request.get_json(silent=True) or {}
+        name = (body.get('name') or '').strip()
+        if not name:
+            return jsonify({'status': 'error', 'message': 'Preset name required'}), 400
+        settings = load_settings()
+        avail = settings.get('availability', {}) or {}
+        ranges = _normalise_ranges(body.get('ranges', avail))
+        presets = avail.get('custom_presets')
+        if not isinstance(presets, dict):
+            presets = {}
+        presets[name] = {'name': name, 'ranges': ranges}
+        avail['custom_presets'] = presets
+        settings['availability'] = avail
+        save_json(SETTINGS_PATH, settings)
+        return jsonify({'status': 'ok', 'custom_presets': presets})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/availability/preset/<name>', methods=['DELETE'])
+def api_availability_delete_preset(name):
+    try:
+        settings = load_settings()
+        avail = settings.get('availability', {}) or {}
+        presets = avail.get('custom_presets')
+        if isinstance(presets, dict) and name in presets:
+            del presets[name]
+            avail['custom_presets'] = presets
+            settings['availability'] = avail
+            save_json(SETTINGS_PATH, settings)
+        return jsonify({'status': 'ok'})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
@@ -2739,6 +3700,132 @@ def api_settings_twilio_test():
         code = 200 if result['success'] else 400
         return jsonify({'status': 'ok' if result['success'] else 'error',
                         'message': result['message']}), code
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Backup
+# ---------------------------------------------------------------------------
+
+_BACKUP_DATA_FILES = [
+    'students.json', 'lessons.json', 'invoices.json',
+    'expenses.json', 'packages.json', 'sms_contacts.json',
+    'sms_groups.json', 'sms_history.json',
+]
+_BACKUP_CONFIG_FILES = ['settings.json']
+
+
+def _backup_meta() -> dict:
+    settings = load_settings()
+    backup = settings.get('backup') or {}
+    last = backup.get('last_backup_at')
+    remind = int(backup.get('remind_after_days', 30) or 30)
+    days_since = None
+    if last:
+        try:
+            last_dt = datetime.fromisoformat(last)
+            days_since = (now_sydney().replace(tzinfo=None) - last_dt.replace(tzinfo=None)).days
+        except (TypeError, ValueError):
+            days_since = None
+    snoozed_until = backup.get('snoozed_until')
+    return {
+        'last_backup': last,
+        'days_since': days_since,
+        'remind_after_days': remind,
+        'snoozed_until': snoozed_until,
+    }
+
+
+@app.route('/api/backup/status')
+def api_backup_status():
+    meta = _backup_meta()
+    days = meta['days_since']
+    remind = meta['remind_after_days']
+    snoozed_until = meta.get('snoozed_until')
+    snoozed = bool(snoozed_until and snoozed_until >= today_str())
+    needs_backup = (days is None) or (days >= remind)
+    return jsonify({
+        'last_backup': meta['last_backup'],
+        'days_since': days,
+        'remind_after_days': remind,
+        'needs_backup': needs_backup and not snoozed,
+    })
+
+
+@app.route('/api/backup/download')
+def api_backup_download():
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for name in _BACKUP_DATA_FILES:
+            path = os.path.join(DATA_DIR, name)
+            if os.path.exists(path):
+                zf.write(path, arcname=f'data/{name}')
+        for name in _BACKUP_CONFIG_FILES:
+            path = os.path.join(CONFIG_DIR, name)
+            if os.path.exists(path):
+                zf.write(path, arcname=f'config/{name}')
+        invoices_dir = os.path.join(app.static_folder, 'invoices')
+        if os.path.isdir(invoices_dir):
+            for fname in os.listdir(invoices_dir):
+                fpath = os.path.join(invoices_dir, fname)
+                if os.path.isfile(fpath):
+                    zf.write(fpath, arcname=f'static/invoices/{fname}')
+    buffer.seek(0)
+
+    settings = load_settings()
+    settings.setdefault('backup', {})
+    settings['backup']['last_backup_at'] = now_sydney().isoformat()
+    settings['backup'].pop('snoozed_until', None)
+    save_json(SETTINGS_PATH, settings)
+
+    fname = f"ivan_backup_{now_sydney().strftime('%Y-%m-%d')}.zip"
+    return send_file(buffer, mimetype='application/zip',
+                     as_attachment=True, download_name=fname)
+
+
+@app.route('/api/backup/restore', methods=['POST'])
+def api_backup_restore():
+    try:
+        upload = request.files.get('file')
+        if not upload:
+            return jsonify({'status': 'error', 'message': 'No file uploaded'}), 400
+        restored = []
+        with zipfile.ZipFile(upload.stream) as zf:
+            for member in zf.namelist():
+                if member.endswith('/') or '..' in member:
+                    continue
+                base = os.path.basename(member)
+                if member.startswith('data/') and base in _BACKUP_DATA_FILES:
+                    dest = os.path.join(DATA_DIR, base)
+                elif member.startswith('config/') and base in _BACKUP_CONFIG_FILES:
+                    dest = os.path.join(CONFIG_DIR, base)
+                elif member.startswith('static/invoices/'):
+                    inv_dir = os.path.join(app.static_folder, 'invoices')
+                    os.makedirs(inv_dir, exist_ok=True)
+                    dest = os.path.join(inv_dir, base)
+                else:
+                    continue
+                with zf.open(member) as src, open(dest, 'wb') as out:
+                    out.write(src.read())
+                restored.append(member)
+        return jsonify({'status': 'ok', 'restored': restored, 'count': len(restored)})
+    except zipfile.BadZipFile:
+        return jsonify({'status': 'error', 'message': 'Not a valid backup ZIP file'}), 400
+    except Exception as e:
+        log_error(f"Backup restore error: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+
+@app.route('/api/backup/snooze', methods=['POST'])
+def api_backup_snooze():
+    try:
+        settings = load_settings()
+        settings.setdefault('backup', {})
+        snooze_until = (now_sydney().date() + timedelta(days=7)).isoformat()
+        settings['backup']['snoozed_until'] = snooze_until
+        save_json(SETTINGS_PATH, settings)
+        return jsonify({'status': 'ok', 'snoozed_until': snooze_until})
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 

@@ -1,47 +1,203 @@
 {% extends "base.html" %}
 {% block title %}Home{% endblock %}
+{% block body_class %}coach-home{% endblock %}
 {% block content %}
 
-<div class="page-header">
-  <div class="topbar-titles">
-    <h1 class="page-title">{{ greeting.text }}, {{ user_title }} {{ user_name }}</h1>
-    <div class="page-subtitle">{{ today_long }}</div>
+<div class="dash-head">
+  <div>
+    <div class="greeting">{{ greeting.text }}, {{ coach_title }} {{ coach_name }}</div>
+    <div class="greeting-date">{{ today_long }}</div>
   </div>
   <button class="btn btn-primary" onclick="Coach.openAddLesson()"><i class="ti ti-plus"></i> Add Lesson</button>
 </div>
 
-<div class="card weather-strip" id="weather-strip">
-  <div class="weather-empty">Loading weather…</div>
+<div id="backup-reminder" class="backup-banner" hidden>
+  <i class="ti ti-database"></i>
+  <span id="backup-reminder-text">You haven't backed up Ivan recently.</span>
+  <span class="backup-banner-actions">
+    <a class="btn btn-small btn-primary" href="/api/backup/download" onclick="markBackedUp()"><i class="ti ti-download"></i> Download Backup</a>
+    <button class="btn btn-small btn-secondary" onclick="snoozeBackup()">Remind me later</button>
+  </span>
 </div>
 
-<div class="coach-cols">
-  <section class="coach-col-main">
-    <div class="card">
-      <div class="activity-head">
-        <div class="card-title"><i class="ti ti-calendar-event"></i> Today's Schedule</div>
-        <span class="text-muted" id="today-date">{{ today }}</span>
+<div class="agenda-grid">
+  <!-- LEFT: Today's Schedule -->
+  <section class="card schedule-card">
+    <div class="schedule-head">
+      <div>
+        <h2>Today's Schedule</h2>
+        <div class="schedule-sub">
+          {{ lesson_count }} lesson{{ '' if lesson_count == 1 else 's' }} · {{ hours_label }} · {{ total_value | currency }}
+        </div>
       </div>
-      <div id="today-lessons" class="lesson-list">
-        <div class="empty-state"><div class="empty-title">Loading…</div></div>
+      {% if lesson_count %}
+      <div class="sched-view-toggle" role="tablist" aria-label="Schedule view">
+        <button class="sched-tog active" data-view="compact" onclick="setScheduleView('compact')">Compact</button>
+        <button class="sched-tog" data-view="timeline" onclick="setScheduleView('timeline')">Timeline</button>
       </div>
-      <div id="today-earnings-line" class="today-earnings"></div>
+      {% endif %}
     </div>
+
+    {% if not lesson_count %}
+    <div class="schedule-empty">
+      <i class="ti ti-beach"></i>
+      <div>No lessons booked today — enjoy the day off.</div>
+      <button class="btn btn-primary" onclick="Coach.openAddLesson()"><i class="ti ti-plus"></i> Add a lesson</button>
+    </div>
+    {% else %}
+
+    <!-- COMPACT VIEW (default): booked lessons + free-time summary -->
+    <div id="sched-compact" class="sched-compact">
+      {% for l in lessons_today %}
+      <div class="lesson-card status-{{ l.status }}" id="cl-{{ l.id }}">
+        <div class="lesson-time-col">{{ l.start_12h }}</div>
+        <div class="lesson-main">
+          <div class="lesson-name">
+            {{ l.student_name }}
+            {% if l.level %}<span class="badge level-{{ l.level|lower|replace(' ', '-') }}">{{ l.level }}</span>{% endif %}
+          </div>
+          <div class="lesson-meta">
+            {{ l.duration_minutes }} min · <span class="lesson-price">{{ l.price | currency }}</span>
+          </div>
+        </div>
+        <div class="lesson-actions">
+          {% if l.status == 'scheduled' %}
+            <button class="lesson-qa" title="Mark complete" onclick="completeLesson('{{ l.id }}')"><i class="ti ti-check"></i></button>
+            {% if settings.modules and settings.modules.sms %}<a class="lesson-qa" title="Text student" href="/sms?tab=contacts"><i class="ti ti-message"></i></a>{% endif %}
+            <button class="lesson-qa" title="Cancel lesson" onclick="cancelLesson('{{ l.id }}')"><i class="ti ti-x"></i></button>
+          {% elif l.status == 'completed' %}
+            <span class="lesson-qa done" title="Completed"><i class="ti ti-check"></i></span>
+            {% if settings.modules and settings.modules.invoicing %}<button class="lesson-qa" title="Generate invoice" onclick="generateInvoice('{{ l.id }}')"><i class="ti ti-file-invoice"></i></button>{% endif %}
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {% if schedule_summary.free_blocks %}
+      <div class="free-summary">
+        <span class="free-summary-label"><i class="ti ti-clock"></i> Free time:</span>
+        <span class="free-summary-blocks">{{ schedule_summary.free_blocks | join(', ') }}</span>
+        <button class="btn btn-small btn-secondary" onclick="Coach.openAddLesson()"><i class="ti ti-plus"></i> Add lesson</button>
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- TIMELINE VIEW (optional): full hour-by-hour grid -->
+    <div id="sched-timeline" class="timeline" style="display:none;">
+      {% for row in timeline %}
+      <div class="tl-row {{ 'tl-free' if row.type == 'free' else '' }}">
+        <div class="tl-time">{{ row.time }}</div>
+        {% if row.type == 'lesson' %}
+          {% set l = row.lesson %}
+          <div class="lesson-card status-{{ l.status }}" id="lesson-{{ l.id }}">
+            <div class="lesson-main">
+              <div class="lesson-name">
+                {{ l.student_name }}
+                {% if l.level %}<span class="badge level-{{ l.level|lower|replace(' ', '-') }}">{{ l.level }}</span>{% endif %}
+              </div>
+              <div class="lesson-meta">
+                {{ l.start_12h }}{% if l.end_12h %} – {{ l.end_12h }}{% endif %} · {{ l.duration_minutes }} min · <span class="lesson-price">{{ l.price | currency }}</span>
+              </div>
+            </div>
+            <div class="lesson-actions">
+              {% if l.status == 'scheduled' %}
+                <button class="lesson-qa" title="Mark complete" onclick="completeLesson('{{ l.id }}')"><i class="ti ti-check"></i></button>
+                {% if settings.modules and settings.modules.sms %}<a class="lesson-qa" title="Text student" href="/sms?tab=contacts"><i class="ti ti-message"></i></a>{% endif %}
+                <button class="lesson-qa" title="Cancel lesson" onclick="cancelLesson('{{ l.id }}')"><i class="ti ti-x"></i></button>
+              {% elif l.status == 'completed' %}
+                <span class="lesson-qa done" title="Completed"><i class="ti ti-check"></i></span>
+                {% if settings.modules and settings.modules.invoicing %}<button class="lesson-qa" title="Generate invoice" onclick="generateInvoice('{{ l.id }}')"><i class="ti ti-file-invoice"></i></button>{% endif %}
+              {% endif %}
+            </div>
+          </div>
+        {% else %}
+          <button class="free-slot" onclick="Coach.openAddLesson({start_time: '{{ row.hour24 }}'})">
+            <i class="ti ti-plus"></i> Free — tap to add a lesson
+          </button>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
   </section>
 
-  <aside class="coach-col-side">
-    <div class="card quick-stats">
-      <div class="card-title">Quick Stats</div>
-      <div class="qstat"><span>This week</span><strong id="stat-week">$0.00</strong></div>
-      <div class="qstat"><span>This month</span><strong id="stat-month">$0.00</strong></div>
-      <div class="qstat"><span>Lessons this week</span><strong id="stat-weekcount">0</strong></div>
-      {% if settings.modules and settings.modules.invoicing %}
-      <div class="qstat"><span>Unpaid invoices</span><strong id="stat-unpaid" class="amber">$0.00</strong></div>
+  <!-- RIGHT: Weather Rail -->
+  <aside class="weather-rail">
+    <div class="card wx-card">
+      {% if weather %}
+      <div class="wx-top">
+        <div class="wx-icon"><i class="ti {{ weather_icon }}"></i></div>
+        <div>
+          <div class="wx-temp">{{ weather.temp_c | round | int }}°</div>
+          <div class="wx-cond">{{ weather.condition }}</div>
+          <div class="wx-feels">Feels like {{ weather.feels_like_c | round | int }}°</div>
+        </div>
+      </div>
+      <div class="wx-callout">
+        <i class="ti {{ callout.icon }}"></i>
+        <div>
+          <div class="wx-callout-title">{{ callout.title }}</div>
+          <div class="wx-callout-text">{{ callout.text }}{% if callout.link %} <a class="wx-callout-link" href="{{ callout.link }}">{{ callout.link_text }}</a>.{% endif %}</div>
+        </div>
+      </div>
+      <div class="wx-meta">
+        <div class="wx-meta-cell">
+          <i class="ti ti-wind"></i>
+          <div class="wx-meta-val">{{ weather.wind_kmh | round | int }}</div>
+          <div class="wx-meta-lbl">km/h {{ weather.wind_direction }}</div>
+        </div>
+        <div class="wx-meta-cell">
+          <i class="ti ti-droplet"></i>
+          <div class="wx-meta-val">{{ weather.rain_prob }}%</div>
+          <div class="wx-meta-lbl">Rain</div>
+        </div>
+        <div class="wx-meta-cell">
+          <i class="ti ti-sun"></i>
+          <div class="wx-meta-val">{{ weather.uv_index | round | int }}</div>
+          <div class="wx-meta-lbl">{{ weather.uv_label }}</div>
+        </div>
+        <div class="wx-meta-cell">
+          <i class="ti ti-bulb"></i>
+          <div class="wx-meta-val" style="font-size:12px;">{{ sunset_12 }}</div>
+          <div class="wx-meta-lbl">Lights</div>
+        </div>
+      </div>
+      {% else %}
+      <div class="wx-top">
+        <div class="wx-icon"><i class="ti ti-cloud-off"></i></div>
+        <div><div class="wx-cond">Weather unavailable right now.</div></div>
+      </div>
       {% endif %}
-      <div class="qstat next-lesson" id="next-lesson">
-        <span>Next lesson</span><strong>—</strong>
+    </div>
+
+    {% if week_days %}
+    <div class="card weekpeek-card">
+      <div class="weekpeek-title">This Week</div>
+      <div class="weekpeek-row">
+        {% for d in week_days %}
+        <a class="wp-day {{ 'today' if d.is_today else '' }}" href="/calendar?date={{ d.date }}">
+          <div class="wp-name">{{ 'Today' if d.is_today else d.day_name[:3] }}</div>
+          <div class="wp-icon"><i class="ti {{ d.icon }}"></i></div>
+          <div class="wp-temp">{{ d.temp_max | round | int if d.temp_max is not none else '—' }}°</div>
+          {% if d.rain_prob and d.rain_prob > 30 %}<div class="wp-rain">{{ d.rain_prob }}%</div>{% endif %}
+        </a>
+        {% endfor %}
       </div>
     </div>
-    <div id="lights-card"></div>
+    {% endif %}
+
+    <div class="card qstats-card">
+      <div class="qstats-title">Quick Stats</div>
+      <div class="qstat-row"><span class="qstat-lbl">This week</span><span class="qstat-val">{{ earnings_week | currency }}</span></div>
+      <div class="qstat-row"><span class="qstat-lbl">This month</span><span class="qstat-val">{{ earnings_month | currency }}</span></div>
+      {% if total_owed and total_owed > 0 %}
+      <a class="qstat-row" href="/money-owed" style="text-decoration:none;"><span class="qstat-lbl">Money owed</span><span class="qstat-val amber">{{ total_owed | currency }}</span></a>
+      {% endif %}
+      <div class="qstat-row">
+        <span class="qstat-lbl">Next lesson</span>
+        <span class="qstat-val accent">{% if next_lesson %}{{ next_lesson.start_12h }} — {{ next_lesson.student_name }}{% else %}None today{% endif %}</span>
+      </div>
+    </div>
   </aside>
 </div>
 
@@ -51,72 +207,16 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='coach.js') }}"></script>
 <script>
-const INVOICING_ON = {{ 'true' if settings.modules and settings.modules.invoicing else 'false' }};
-const SMS_ON = {{ 'true' if settings.modules and settings.modules.sms else 'false' }};
-function statusBadge(s) {
-  return `<span class="status-badge status-${s}">${s}</span>`;
-}
-function blocksViz(blocks) {
-  let html = '<div class="blocks-viz">';
-  for (let i = 0; i < blocks; i++) html += '<span class="blk"></span>';
-  return html + '</div>';
-}
-function levelBadge(level) {
-  if (!level) return '';
-  const cls = level.toLowerCase().replace(/\s+/g, '-');
-  return `<span class="badge level-${cls}">${level}</span>`;
-}
-
-async function loadToday() {
-  const data = await Coach.getJSON('/api/lessons/today');
-  const list = document.getElementById('today-lessons');
-  const lessons = (data.lessons || []);
-  if (!lessons.length) {
-    list.innerHTML = `<div class="empty-state">
-      <div class="empty-icon"><i class="ti ti-beach" style="font-size:40px; color:rgba(255,255,255,0.15)"></i></div>
-      <div class="empty-title">No lessons today</div>
-      <div class="empty-desc">Enjoy the day off</div></div>`;
-    document.getElementById('today-earnings-line').textContent = '';
-    return;
-  }
-  let earned = 0, count = 0;
-  list.innerHTML = lessons.map(l => {
-    if (l.status !== 'cancelled') { earned += Number(l.price || 0); count++; }
-    const end = Coach.addMinutes(l.start_time, l.duration_minutes);
-    return `<div class="lesson-card">
-      <div class="lesson-time">
-        <div class="lt-range">${Coach.to12h(l.start_time)}</div>
-        <div class="lt-end">${Coach.to12h(end)}</div>
-      </div>
-      ${blocksViz(l.blocks)}
-      <div class="lesson-body">
-        <div class="lesson-student">${l.student_name} ${levelBadge(l.level)}</div>
-        <div class="lesson-meta">${Coach.money(l.price)} · ${l.duration_minutes} min ${statusBadge(l.status)}</div>
-      </div>
-      <div class="lesson-actions">
-        ${l.status === 'scheduled' ? `<button class="btn-mini" onclick="completeLesson('${l.id}')">Complete</button>
-        <button class="btn-mini secondary" onclick="cancelLesson('${l.id}')">Cancel</button>` : ''}
-        ${SMS_ON && l.status === 'cancelled' ? `<a class="btn-mini" href="/sms?template=rain_cancel&tab=contacts">Send Cancellation SMS</a>` : ''}
-        ${INVOICING_ON && l.status === 'completed' ? `<button class="btn-mini" onclick="generateInvoice('${l.id}')">Generate Invoice</button>` : ''}
-      </div>
-    </div>`;
-  }).join('');
-  document.getElementById('today-earnings-line').textContent =
-    `Today: ${Coach.money(earned)} from ${count} lesson${count !== 1 ? 's' : ''}`;
-}
-
 async function completeLesson(id) {
-  try { await Coach.postJSON(`/api/lessons/${id}/complete`); Coach.toast('Marked complete', 'success'); loadAll(); }
+  try { await Coach.postJSON(`/api/lessons/${id}/complete`); Coach.toast('Marked complete', 'success'); setTimeout(() => location.reload(), 500); }
   catch (e) { Coach.toast(e.message, 'error'); }
 }
 async function cancelLesson(id) {
+  if (!await Coach.confirm({ title: 'Cancel lesson?', message: 'This lesson will be marked as cancelled.', confirmText: 'Cancel lesson', cancelText: 'Keep' })) return;
   try {
     await Coach.postJSON(`/api/lessons/${id}/cancel`);
     Coach.toast('Cancelled', 'info');
-    loadAll();
-    if (SMS_ON && confirm('Send a cancellation SMS to affected students?')) {
-      window.location.href = '/sms?template=rain_cancel&tab=contacts';
-    }
+    setTimeout(() => location.reload(), 500);
   } catch (e) { Coach.toast(e.message, 'error'); }
 }
 async function generateInvoice(id) {
@@ -127,73 +227,46 @@ async function generateInvoice(id) {
   } catch (e) { Coach.toast(e.message, 'error'); }
 }
 
-async function loadStats() {
-  const s = await Coach.getJSON('/api/earnings/summary');
-  document.getElementById('stat-week').textContent = Coach.money(s.week);
-  document.getElementById('stat-month').textContent = Coach.money(s.month);
-  const wk = await Coach.getJSON('/api/lessons/week');
-  const active = (wk.lessons || []).filter(l => l.status !== 'cancelled');
-  document.getElementById('stat-weekcount').textContent = active.length;
-
-  if (INVOICING_ON && document.getElementById('stat-unpaid')) {
-    try {
-      const inv = await Coach.getJSON('/api/invoices/summary');
-      document.getElementById('stat-unpaid').textContent = Coach.money(inv.total_outstanding || 0);
-    } catch (e) {}
-  }
-
-  // next lesson countdown
-  const today = await Coach.getJSON('/api/lessons/today');
-  const now = new Date();
-  const upcoming = (today.lessons || []).filter(l => l.status === 'scheduled').map(l => {
-    const [h, m] = l.start_time.split(':').map(Number);
-    const d = new Date(); d.setHours(h, m, 0, 0);
-    return { l, d };
-  }).filter(x => x.d > now).sort((a, b) => a.d - b.d);
-  const nx = document.getElementById('next-lesson');
-  if (upcoming.length) {
-    const mins = Math.round((upcoming[0].d - now) / 60000);
-    const hh = Math.floor(mins / 60), mm = mins % 60;
-    const t = (hh ? hh + 'h ' : '') + mm + 'm';
-    nx.innerHTML = `<span>Next lesson</span><strong>in ${t} — ${upcoming[0].l.student_name}</strong>`;
-  } else {
-    nx.innerHTML = `<span>Next lesson</span><strong>none scheduled</strong>`;
-  }
+function setScheduleView(view) {
+  document.querySelectorAll('.sched-tog').forEach(b => b.classList.toggle('active', b.dataset.view === view));
+  const compact = document.getElementById('sched-compact');
+  const timeline = document.getElementById('sched-timeline');
+  if (compact) compact.style.display = view === 'compact' ? 'block' : 'none';
+  if (timeline) timeline.style.display = view === 'timeline' ? 'block' : 'none';
+  localStorage.setItem('ivan_sched_view', view);
 }
+(function initScheduleView() {
+  const saved = localStorage.getItem('ivan_sched_view') || 'compact';
+  if (document.getElementById('sched-compact')) setScheduleView(saved);
+})();
 
-async function loadLights() {
-  const w = await Coach.getJSON('/api/weather');
-  const card = document.getElementById('lights-card');
-  if (w && w.lights_warning) {
-    card.innerHTML = `<div class="card lights-warning"><i class="ti ti-bulb"></i>
-      Lights on in ${w.lights_warning.minutes_until} minutes<br>
-      <span class="text-muted">Sunset ${Coach.to12h(w.lights_warning.sunset_time)}</span></div>`;
-  } else { card.innerHTML = ''; }
-}
+// After adding a lesson via the modal, reload so the server re-renders the agenda.
+window.onLessonsChanged = function () { setTimeout(() => location.reload(), 400); };
 
-async function loadWeather() {
-  await Coach.renderWeather('weather-strip');
-  if (!SMS_ON) return;
+async function loadBackupReminder() {
+  const banner = document.getElementById('backup-reminder');
+  if (!banner) return;
   try {
-    const w = await Coach.getJSON('/api/weather');
-    const rating = w && w.playability && w.playability.rating;
-    if (rating === 'Poor') {
-      const strip = document.getElementById('weather-strip');
-      if (strip && !strip.querySelector('.wx-warn-btn')) {
-        const a = document.createElement('a');
-        a.className = 'btn btn-warn wx-warn-btn';
-        a.href = '/sms?template=rain_cancel&tab=contacts';
-        a.innerHTML = '<i class="ti ti-alert-triangle"></i> Warn affected students';
-        strip.appendChild(a);
+    const s = await Coach.getJSON('/api/backup/status');
+    if (s.needs_backup) {
+      const txt = document.getElementById('backup-reminder-text');
+      if (txt) {
+        txt.textContent = (s.days_since === null || s.days_since === undefined)
+          ? "You haven't backed up Ivan yet. Protect your data."
+          : `You haven't backed up Ivan in ${s.days_since} days.`;
       }
-    }
+      banner.hidden = false;
+    } else { banner.hidden = true; }
   } catch (e) {}
 }
-
-function loadAll() { loadToday(); loadStats(); }
-window.onLessonsChanged = loadAll;
-loadWeather();
-loadAll();
-loadLights();
+function markBackedUp() {
+  setTimeout(() => { const b = document.getElementById('backup-reminder'); if (b) b.hidden = true; }, 500);
+}
+async function snoozeBackup() {
+  try { await Coach.postJSON('/api/backup/snooze', {}); } catch (e) {}
+  const b = document.getElementById('backup-reminder');
+  if (b) b.hidden = true;
+}
+loadBackupReminder();
 </script>
 {% endblock %}
